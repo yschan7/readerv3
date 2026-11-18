@@ -312,6 +312,7 @@ let fullText = "";
 let pageList = [];
 let currentPageIndex = 0;
 const CHARS_PER_PAGE = 1400;
+let wheelLock = false;
 
 function initDB() {
 return new Promise((resolve, reject) => {
@@ -403,6 +404,20 @@ if (toolbar.contains(e.target) || shelfModal.contains(e.target) || tocModal.cont
 || prevBtn.contains(e.target) || nextBtn.contains(e.target)) return;
 toolbar.classList.toggle('show');
 });
+// 滑鼠滾輪翻頁
+document.addEventListener('wheel', (e) => {
+if (wheelLock) return;
+if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
+e.preventDefault();
+wheelLock = true;
+if (e.deltaY > 0) {
+renderPage(currentPageIndex + 2);
+} else {
+renderPage(currentPageIndex - 2);
+}
+setTimeout(() => wheelLock = false, 180);
+}, { passive: false });
+
 function saveProgress(pageIdx) {
 if (!currentFileKey) return;
 try { localStorage.setItem(`reader_pos_${currentFileKey}`, pageIdx); } catch (e) {}
@@ -420,9 +435,9 @@ pageInfo.textContent = `${currentPageIndex+1} / ${pageList.length}`;
 saveProgress(currentPageIndex);
 }
 
-function splitTextToPages(text) {
+function splitTextToPages(text, startAt = 0) {
 const pages = [];
-let ptr = 0;
+let ptr = startAt;
 while(ptr < text.length) {
 let end = ptr + CHARS_PER_PAGE;
 if(end >= text.length) {
@@ -437,34 +452,18 @@ ptr = brPos + 1;
 return pages;
 }
 
-// 【重寫：全域搜尋，支援 第X節 / 第X章 / 第X回】
-function parseChaptersForToc(text, pageArray) {
+// 掃章節，記錄每個章節的字元位置
+function parseChaptersForToc(text) {
 chapterElements = [];
-// 建立每頁起始偏移表
-const pageOffset = [0];
-let sum = 0;
-for(let p of pageArray) {
-sum += p.length;
-pageOffset.push(sum);
-}
-// 正則：第 + 數字(中文/阿拉伯) + 節/章/回/卷/幕
 const chapterRegex = /第([0-9零一二三四五六七八九十百千萬億]+)(節|章|回|卷|幕)([^\n]*)/g;
 let match;
 while ((match = chapterRegex.exec(text)) !== null) {
 const titleRaw = match[0].trim();
 const titleStart = match.index;
-// 搵對應頁碼
-let targetPage = 0;
-for(let i=0; i < pageOffset.length; i++){
-if(titleStart >= pageOffset[i]) targetPage = i;
-else break;
-}
-targetPage = Math.min(targetPage, pageArray.length - 1);
 const percent = (titleStart / text.length) * 100;
 chapterElements.push({
 title: titleRaw,
 charPos: titleStart,
-page: targetPage,
 percent: percent
 });
 }
@@ -481,10 +480,13 @@ tocBtn.style.display = 'block';
 chapterElements.forEach((ch)=>{
 const item = document.createElement('div');
 item.className = 'drawer-item';
-item.innerHTML = `<span>${ch.title}</span><span class="item-subtext">頁${ch.page+1} · ${ch.percent.toFixed(1)}%</span>`;
+item.innerHTML = `<span>${ch.title}</span><span class="item-subtext">${ch.percent.toFixed(1)}%</span>`;
 item.onclick = ()=>{
 tocModal.classList.remove('active');
-renderPage(ch.page);
+// 重分頁：由章節開頭位置開始切分，第一頁就係呢個章節
+pageList = splitTextToPages(fullText, ch.charPos);
+currentPageIndex = 0;
+renderPage(0);
 };
 tocList.appendChild(item);
 })
@@ -509,6 +511,8 @@ progressSlider.addEventListener('mousedown', () => isUserDraggingSlider = true);
 progressSlider.addEventListener('touchstart', () => isUserDraggingSlider = true, { passive: true });
 progressSlider.addEventListener('input', (e) => {
 const targetPercent = parseFloat(e.target.value);
+// 滑條跳轉就用全文由頭分頁
+pageList = splitTextToPages(fullText, 0);
 const targetIdx = Math.floor((targetPercent / 100) * (pageList.length - 1));
 renderPage(targetIdx);
 });
@@ -518,6 +522,7 @@ progressBtn.addEventListener('click', (e) => {
 e.stopPropagation();
 const input = prompt('輸入跳轉頁數', currentPageIndex+1);
 if(input === null) return;
+pageList = splitTextToPages(fullText, 0);
 const p = parseInt(input)-1;
 if(!isNaN(p)) renderPage(p);
 });
@@ -583,9 +588,10 @@ shelfModal.classList.remove('active');
 currentFileKey = book.key;
 statusText.textContent = '載入中...';
 fullText = book.content;
-pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText, pageList);
+parseChaptersForToc(fullText);
 renderToc();
+// 書架載入預設由頭分頁
+pageList = splitTextToPages(fullText, 0);
 const savedPage = getSavedProgress();
 renderPage(savedPage);
 statusText.textContent = '';
@@ -622,9 +628,9 @@ statusText.textContent = `${Math.min(100, Math.round((offset / uint8Array.length
 await new Promise(r => setTimeout(r, 0));
 }
 fullText = formatQuotes(converter(fullRawText));
-pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText, pageList);
+parseChaptersForToc(fullText);
 renderToc();
+pageList = splitTextToPages(fullText, 0);
 saveBookToDB(currentFileKey, file.name, fullText);
 const savedPage = getSavedProgress();
 renderPage(savedPage);
@@ -645,9 +651,9 @@ books.sort((a, b) => b.updatedAt - a.updatedAt);
 const lastBook = books[0];
 currentFileKey = lastBook.key;
 fullText = lastBook.content;
-pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText, pageList);
+parseChaptersForToc(fullText);
 renderToc();
+pageList = splitTextToPages(fullText, 0);
 const savedPage = getSavedProgress();
 renderPage(savedPage);
 showToast(`自動載入最近書籍: ${lastBook.name}`);
