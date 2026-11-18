@@ -498,7 +498,9 @@ let currentFileKey = null;
 let chapterElements = [];
 let toastTimer = null;
 
-let rawLines = []; // 儲存原始行陣列，用於高速分塊渲染
+let fullTextCache = '';
+let chaptersData = []; // 儲存章節物件陣列：{ title, startIndex, endIndex, percent }
+let currentChapterIndex = 0;
 let currentPage = 0;
 let totalPages = 1;
 let pageStepWidth = 0;
@@ -511,9 +513,14 @@ function showToast(msg) {
 }
 
 function getCurrentRatio() {
+    if (fullTextCache.length === 0) return 0;
     if (readingMode === 'paged') {
-        if (totalPages <= 1) return 0;
-        return Math.min(1, Math.max(0, currentPage / (totalPages - 1)));
+        const ch = chaptersData[currentChapterIndex];
+        if (!ch) return 0;
+        const chStartRatio = ch.startIndex / fullTextCache.length;
+        const chEndRatio = ch.endIndex / fullTextCache.length;
+        const pageRatio = totalPages > 1 ? currentPage / (totalPages - 1) : 0;
+        return Math.min(1, Math.max(0, chStartRatio + (chEndRatio - chStartRatio) * pageRatio));
     } else {
         const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
         const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
@@ -525,21 +532,14 @@ function getCurrentRatio() {
 function saveProgressRatio(ratio) {
     if (!currentFileKey) return;
     try {
-        localStorage.setItem(`reader_ratio_${currentFileKey}`, ratio);
-        if (readingMode === 'scroll') {
-            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
-            localStorage.setItem(`reader_pos_${currentFileKey}`, scrollTop);
+        localStorage.setItem(`reader_ratio_${currentFileKey}`, ratio); if (readingMode === 'scroll') { const scrollTop = window.pageYOffset \vert{}\vert{} document.documentElement.scrollTop \vert{}\vert{} 0; localStorage.setItem(`reader_pos_${currentFileKey}`, scrollTop);
         }
     } catch (e) {}
 }
 
 function getSavedRatio() {
     if (!currentFileKey) return 0;
-    const savedRatio = localStorage.getItem(`reader_ratio_${currentFileKey}`);
-    if (savedRatio !== null && !isNaN(parseFloat(savedRatio))) {
-        return Math.min(1, Math.max(0, parseFloat(savedRatio)));
-    }
-    const savedY = parseFloat(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
+    const savedRatio = localStorage.getItem(`reader_ratio_${currentFileKey}`); if (savedRatio !== null && !isNaN(parseFloat(savedRatio))) { return Math.min(1, Math.max(0, parseFloat(savedRatio))); } const savedY = parseFloat(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
     const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
     if (savedY > 0 && scrollHeight > 0) {
         return Math.min(1, Math.max(0, savedY / scrollHeight));
@@ -547,540 +547,47 @@ function getSavedRatio() {
     return 0;
 }
 
-// 700萬字超高速分塊頁面計算與排版核心
-function recalcPagedLayout(targetRatio = null) {
-    if (readingMode !== 'paged' || rawLines.length === 0) return;
+// 依據進度比例找出對應的章節索引
+function findChapterIndexByRatio(ratio) {
+    if (chaptersData.length === 0) return 0;
+    const targetChar = ratio * fullTextCache.length;
+    for (let i = 0; i < chaptersData.length; i++) {
+        if (targetChar >= chaptersData[i].startIndex && targetChar <= chaptersData[i].endIndex) {
+            return i;
+        }
+    }
+    return chaptersData.length - 1;
+}
+
+// 載入並渲染指定章節內容（揭頁模式核心加速機制）
+function loadChapterContent(chapterIdx, targetPage = 0) {
+    if (chaptersData.length === 0) return;
+    currentChapterIndex = Math.min(chaptersData.length - 1, Math.max(0, chapterIdx));
+    const ch = chaptersData[currentChapterIndex];
 
     const gap = columnCount === 1 ? 0 : 48;
     textContent.style.columnCount = columnCount;
     textContent.style.webkitColumnCount = columnCount;
-    textContent.style.columnGap = `${gap}px`;
-    textContent.style.webkitColumnGap = `${gap}px`;
+    textContent.style.columnGap = `${gap}px`; textContent.style.webkitColumnGap = `${gap}px`;
     textContent.style.transform = 'translateX(0px)';
 
-    const viewportInnerWidth = textContent.clientWidth;
-    if (viewportInnerWidth <= 0) return;
+    // 只渲染當前章節文本，徹底避開 700 萬字同時排版的效能卡頓
+    textContent.textContent = fullTextCache.substring(ch.startIndex, ch.endIndex);
 
-    pageStepWidth = viewportInnerWidth + gap;
-    const totalScrollWidth = textContent.scrollWidth;
+    requestAnimationFrame(() => {
+        const viewportInnerWidth = textContent.clientWidth;
+        if (viewportInnerWidth <= 0) return;
 
-    totalPages = Math.max(1, Math.round((totalScrollWidth + gap) / pageStepWidth));
+        pageStepWidth = viewportInnerWidth + gap;
+        const totalScrollWidth = textContent.scrollWidth;
+        totalPages = Math.max(1, Math.round((totalScrollWidth + gap) / pageStepWidth));
 
-    if (targetRatio !== null) {
-        currentPage = Math.round(targetRatio * (totalPages - 1));
-    }
-    currentPage = Math.min(totalPages - 1, Math.max(0, currentPage));
-    applyPagedTransform();
+        currentPage = Math.min(totalPages - 1, Math.max(0, targetPage));
+        applyPagedTransform();
+    });
 }
 
 function applyPagedTransform() {
     if (readingMode !== 'paged') return;
     const offsetX = currentPage * pageStepWidth;
-    textContent.style.transform = `translate3d(-${offsetX}px, 0, 0)`;
-    pageIndicator.textContent = `${currentPage + 1} / ${totalPages}`;
-    updateProgressUI();
-}
-
-function goToPage(pageIndex) {
-    if (readingMode !== 'paged') return;
-    const clamped = Math.min(totalPages - 1, Math.max(0, pageIndex));
-    if (clamped === currentPage) {
-        if (pageIndex < 0) showToast('已經是第一頁');
-        else if (pageIndex >= totalPages) showToast('已經是最後一頁');
-        return;
-    }
-    currentPage = clamped;
-    applyPagedTransform();
-}
-
-function applyReadingMode(newMode, preserveRatio = true) {
-    const ratio = preserveRatio ? getCurrentRatio() : getSavedRatio();
-    readingMode = newMode;
-    localStorage.setItem('reader_mode', readingMode);
-
-    if (readingMode === 'paged') {
-        document.body.classList.add('paged-mode');
-        readerViewport.classList.add('paged-viewport');
-        modeToggleBtn.textContent = '模式: 揭頁';
-        modeToggleBtn.classList.add('active-opt');
-        colSelectorGroup.style.display = 'inline-flex';
-        window.scrollTo(0, 0);
-        updateColButtonsUI();
-        requestAnimationFrame(() => {
-            recalcPagedLayout(ratio);
-        });
-    } else {
-        document.body.classList.remove('paged-mode');
-        readerViewport.classList.remove('paged-viewport');
-        modeToggleBtn.textContent = '模式: 滾動';
-        modeToggleBtn.classList.remove('active-opt');
-        colSelectorGroup.style.display = 'none';
-
-        textContent.style.columnCount = '';
-        textContent.style.webkitColumnCount = '';
-        textContent.style.columnGap = '';
-        textContent.style.webkitColumnGap = '';
-        textContent.style.transform = 'translateZ(0)';
-
-        requestAnimationFrame(() => {
-            const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-            window.scrollTo(0, ratio * Math.max(0, scrollHeight));
-            updateProgressUI();
-        });
-    }
-}
-
-function updateColButtonsUI() {
-    colBtns.forEach(btn => {
-        const cols = parseInt(btn.dataset.cols);
-        if (cols === columnCount) {
-            btn.classList.add('active-opt');
-        } else {
-            btn.classList.remove('active-opt');
-        }
-    });
-}
-
-modeToggleBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const nextMode = readingMode === 'scroll' ? 'paged' : 'scroll';
-    applyReadingMode(nextMode, true);
-    showToast(nextMode === 'paged' ? `已切換至揭頁模式（${columnCount}欄）` : '已切換至無限滾動模式');
-});
-
-colBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const cols = parseInt(btn.dataset.cols);
-        if (cols === columnCount) return;
-        const ratio = getCurrentRatio();
-        columnCount = cols;
-        localStorage.setItem('reader_columns', columnCount);
-        updateColButtonsUI();
-        if (readingMode === 'paged') {
-            recalcPagedLayout(ratio);
-        }
-        showToast(`排版欄數: ${columnCount} 欄`);
-    });
-});
-
-document.addEventListener('click', (e) => {
-    if (toolbar.contains(e.target) || shelfModal.contains(e.target) || tocModal.contains(e.target)) return;
-
-    if (readingMode === 'paged') {
-        const screenW = window.innerWidth;
-        const clickX = e.clientX;
-        if (clickX < screenW * 0.25) {
-            goToPage(currentPage - 1);
-            return;
-        } else if (clickX > screenW * 0.75) {
-            goToPage(currentPage + 1);
-            return;
-        }
-    }
-    toolbar.classList.toggle('hidden');
-});
-
-document.addEventListener('keydown', (e) => {
-    if (readingMode !== 'paged') return;
-    if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
-    if (e.key === 'ArrowRight' || e.key === 'PageDown') {
-        e.preventDefault();
-        goToPage(currentPage + 1);
-    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
-        e.preventDefault();
-        goToPage(currentPage - 1);
-    } else if (e.key === ' ') {
-        e.preventDefault();
-        goToPage(e.shiftKey ? currentPage - 1 : currentPage + 1);
-    }
-});
-
-let wheelLock = false;
-window.addEventListener('wheel', (e) => {
-    if (readingMode !== 'paged') return;
-    if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
-    if (wheelLock) return;
-
-    const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-    if (Math.abs(delta) < 10) return;
-
-    wheelLock = true;
-    if (delta > 0) {
-        goToPage(currentPage + 1);
-    } else {
-        goToPage(currentPage - 1);
-    }
-    setTimeout(() => { wheelLock = false; }, 180);
-}, { passive: true });
-
-let resizeTimer;
-window.addEventListener('resize', () => {
-    if (readingMode !== 'paged') return;
-    const ratio = getCurrentRatio();
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-        recalcPagedLayout(ratio);
-    }, 120);
-});
-
-function updateProgressUI() {
-    const ratio = getCurrentRatio();
-    if (currentFileKey) saveProgressRatio(ratio);
-    if (isUserDraggingSlider) return;
-
-    const percent = ratio * 100;
-    progressBtn.textContent = `${percent.toFixed(2)}%`;
-    progressSlider.value = percent;
-}
-
-let scrollTimer;
-window.addEventListener('scroll', () => {
-    if (readingMode !== 'scroll') return;
-    if (scrollTimer) cancelAnimationFrame(scrollTimer);
-    scrollTimer = requestAnimationFrame(updateProgressUI);
-}, { passive: true });
-
-progressSlider.addEventListener('mousedown', () => isUserDraggingSlider = true);
-progressSlider.addEventListener('touchstart', () => isUserDraggingSlider = true, { passive: true });
-
-progressSlider.addEventListener('input', (e) => {
-    const targetPercent = parseFloat(e.target.value);
-    progressBtn.textContent = `${targetPercent.toFixed(2)}%`;
-    const ratio = targetPercent / 100;
-
-    if (readingMode === 'paged') {
-        currentPage = Math.round(ratio * (totalPages - 1));
-        applyPagedTransform();
-    } else {
-        const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-        window.scrollTo(0, ratio * scrollHeight);
-    }
-});
-
-progressSlider.addEventListener('mouseup', () => isUserDraggingSlider = false);
-progressSlider.addEventListener('touchend', () => isUserDraggingSlider = false);
-
-progressBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const currentVal = parseFloat(progressBtn.textContent) || 0;
-    const input = prompt('請輸入跳轉進度 (0 - 100):', currentVal.toFixed(2));
-    if (input !== null) {
-        const targetPercent = parseFloat(input);
-        if (!isNaN(targetPercent)) {
-            const clamped = Math.min(100, Math.max(0, targetPercent));
-            const ratio = clamped / 100;
-            if (readingMode === 'paged') {
-                currentPage = Math.round(ratio * (totalPages - 1));
-                applyPagedTransform();
-            } else {
-                const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-                window.scrollTo(0, ratio * scrollHeight);
-                updateProgressUI();
-            }
-        }
-    }
-});
-
-function adjustStyles(type, delta) {
-    const ratioBefore = getCurrentRatio();
-    let anchorNode = null;
-    let anchorOffset = 0;
-
-    if (readingMode === 'scroll') {
-        const range = document.caretRangeFromPoint ? document.caretRangeFromPoint(20, 100) : null;
-        if (range) {
-            anchorNode = range.startContainer;
-            anchorOffset = range.startOffset;
-        }
-    }
-
-    if (type === 'font') {
-        currentFontSize = Math.max(14, Math.min(50, currentFontSize + delta));
-        document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`);
-        localStorage.setItem('reader_font_size', currentFontSize);
-        showToast(`字體大小: ${currentFontSize}px`);
-    } else if (type === 'line') {
-        currentLineHeight = Math.max(1.0, Math.min(2.5, parseFloat((currentLineHeight + delta).toFixed(1))));
-        document.documentElement.style.setProperty('--line-height', currentLineHeight);
-        localStorage.setItem('reader_line_height', currentLineHeight);
-        showToast(`行距大小: ${currentLineHeight}`);
-    }
-
-    requestAnimationFrame(() => {
-        if (readingMode === 'paged') {
-            recalcPagedLayout(ratioBefore);
-        } else {
-            if (anchorNode && anchorNode.nodeType === Node.TEXT_NODE) {
-                try {
-                    const rectRange = document.createRange();
-                    rectRange.setStart(anchorNode, Math.min(anchorOffset, anchorNode.length));
-                    rectRange.setEnd(anchorNode, Math.min(anchorOffset, anchorNode.length));
-                    const rect = rectRange.getBoundingClientRect();
-                    window.scrollBy(0, rect.top - 100);
-                } catch (e) {}
-            }
-            updateProgressUI();
-        }
-    });
-}
-
-document.getElementById('fontIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', 2); });
-document.getElementById('fontDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', -2); });
-document.getElementById('lineIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', 0.1); });
-document.getElementById('lineDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', -0.1); });
-
-function setupDrawer(modalId, btnId, closeId) {
-    const modal = document.getElementById(modalId);
-    document.getElementById(btnId).addEventListener('click', (e) => {
-        e.stopPropagation();
-        modal.classList.add('active');
-        if (modalId === 'shelfModal') renderShelf();
-    });
-    document.getElementById(closeId).addEventListener('click', () => modal.classList.remove('active'));
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
-}
-
-setupDrawer('tocModal', 'tocBtn', 'tocClose');
-setupDrawer('shelfModal', 'shelfBtn', 'shelfClose');
-
-// 高效分塊渲染引擎（專為700萬字優化）
-function parseAndRenderChapters(fullText, onComplete) {
-    rawLines = fullText.split(/\r?\n/);
-    chapterElements = [];
-    textContent.innerHTML = '';
-
-    const chapterRegex = /^\s*(?:第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷]|chapter\s*\d+|[0-9一二三四五六七八九十百]+[、\.])/i;
-
-    const totalLen = fullText.length || 1;
-    let charCount = 0;
-    const batchSize = 10000; // 每批處理1萬行，大幅提升大文本載入速度
-    let index = 0;
-
-    function processBatch() {
-        const limit = Math.min(index + batchSize, rawLines.length);
-        const fragment = document.createDocumentFragment();
-
-        for (let i = index; i < limit; i++) {
-            const line = rawLines[i];
-            const p = document.createElement('div');
-            p.textContent = line + (i < rawLines.length - 1 ? '\n' : '');
-
-            const trimmed = line.trim();
-            if (trimmed.length > 0 && trimmed.length < 50 && chapterRegex.test(trimmed)) {
-                p.classList.add('chapter-title-node');
-                const percent = ((charCount / totalLen) * 100).toFixed(2);
-                chapterElements.push({
-                    title: trimmed,
-                    element: p,
-                    percent: percent
-                });
-            }
-            fragment.appendChild(p);
-            charCount += line.length + 1;
-        }
-        textContent.appendChild(fragment);
-        index = limit;
-
-        if (index < rawLines.length) {
-            statusText.textContent = `解析中 ${Math.round((index / rawLines.length) * 100)}%`;
-            requestAnimationFrame(processBatch);
-        } else {
-            statusText.textContent = '';
-            renderToc();
-            if (typeof onComplete === 'function') onComplete();
-        }
-    }
-    processBatch();
-}
-
-function renderToc() {
-    tocList.innerHTML = '';
-    if (chapterElements.length === 0) {
-        tocList.innerHTML = '<div class="drawer-empty">未偵測到明確的章節目錄</div>';
-        tocBtn.style.display = 'none';
-        return;
-    }
-
-    tocBtn.style.display = 'block';
-    const fragment = document.createDocumentFragment();
-    chapterElements.forEach((ch) => {
-        const item = document.createElement('div');
-        item.className = 'drawer-item';
-
-        const titleSpan = document.createElement('span');
-        titleSpan.textContent = ch.title;
-        titleSpan.style.overflow = 'hidden';
-        titleSpan.style.textOverflow = 'ellipsis';
-        titleSpan.style.flex = '1';
-
-        const percentSpan = document.createElement('span');
-        percentSpan.className = 'item-subtext';
-        percentSpan.textContent = `${ch.percent}%`;
-
-        item.appendChild(titleSpan);
-        item.appendChild(percentSpan);
-
-        item.addEventListener('click', () => {
-            tocModal.classList.remove('active');
-            if (readingMode === 'paged') {
-                const contentRect = textContent.getBoundingClientRect();
-                const elemRect = ch.element.getBoundingClientRect();
-                const relativeLeft = elemRect.left - contentRect.left;
-                const targetPage = Math.floor(relativeLeft / pageStepWidth);
-                goToPage(targetPage);
-            } else {
-                const elementTop = ch.element.offsetTop;
-                window.scrollTo(0, elementTop - 80);
-                updateProgressUI();
-            }
-        });
-        fragment.appendChild(item);
-    });
-    tocList.appendChild(fragment);
-}
-
-function restoreBookPosition() {
-    const savedRatio = getSavedRatio();
-    if (readingMode === 'paged') {
-        recalcPagedLayout(savedRatio);
-    } else {
-        const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-        window.scrollTo(0, savedRatio * Math.max(0, scrollHeight));
-        updateProgressUI();
-    }
-}
-
-async function renderShelf() {
-    shelfList.innerHTML = '';
-    const books = await getAllBooksFromDB();
-    if (books.length === 0) {
-        shelfList.innerHTML = '<div class="drawer-empty">書架目前沒有儲存的書籍</div>';
-        return;
-    }
-
-    books.sort((a, b) => b.updatedAt - a.updatedAt);
-    books.forEach((book) => {
-        const item = document.createElement('div');
-        item.className = 'drawer-item';
-
-        const titleSpan = document.createElement('span');
-        titleSpan.textContent = book.name;
-        titleSpan.style.overflow = 'hidden';
-        titleSpan.style.textOverflow = 'ellipsis';
-        titleSpan.style.flex = '1';
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'delete-btn';
-        delBtn.textContent = '刪除';
-        delBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            if (confirm(`確定要從書架刪除《${book.name}》嗎？`)) {
-                await deleteBookFromDB(book.key);
-                renderShelf();
-            }
-        });
-
-        item.appendChild(titleSpan);
-        item.appendChild(delBtn);
-
-        item.addEventListener('click', () => {
-            shelfModal.classList.remove('active');
-            currentFileKey = book.key;
-            statusText.textContent = '載入中...';
-            parseAndRenderChapters(book.content, () => {
-                restoreBookPosition();
-                statusText.textContent = '';
-                showToast(`已載入《${book.name}》`);
-            });
-        });
-
-        shelfList.appendChild(item);
-    });
-}
-
-fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    currentFileKey = `${file.name}_${file.size}`;
-    statusText.textContent = '載入中...';
-    textContent.innerHTML = '';
-    tocBtn.style.display = 'none';
-
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-
-        let encoding = 'utf-8';
-        try {
-            const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
-            utf8Decoder.decode(uint8Array.subarray(0, 5000));
-        } catch (err) {
-            encoding = 'gb18030';
-        }
-
-        const decoder = new TextDecoder(encoding);
-        const chunkSize = 500000;
-        let offset = 0;
-        let fullRawText = '';
-
-        while (offset < uint8Array.length) {
-            const chunk = uint8Array.subarray(offset, offset + chunkSize);
-            const isFinal = offset + chunkSize >= uint8Array.length;
-            const textChunk = decoder.decode(chunk, { stream: !isFinal });
-
-            fullRawText += textChunk;
-            offset += chunkSize;
-            statusText.textContent = `${Math.min(100, Math.round((offset / uint8Array.length) * 100))}%`;
-            await new Promise(r => setTimeout(r, 0));
-        }
-
-        const convertedFullText = formatQuotes(converter(fullRawText));
-        saveBookToDB(currentFileKey, file.name, convertedFullText);
-        toolbar.classList.remove('hidden');
-
-        parseAndRenderChapters(convertedFullText, () => {
-            const savedRatio = getSavedRatio();
-            restoreBookPosition();
-            if (savedRatio > 0) {
-                statusText.textContent = '已恢復進度';
-                setTimeout(() => { statusText.textContent = ''; }, 2000);
-            } else {
-                statusText.textContent = '';
-            }
-            showToast(`成功載入《${file.name}》`);
-        });
-
-    } catch (err) {
-        console.error(err);
-        statusText.textContent = '載入失敗';
-    }
-});
-
-window.addEventListener('DOMContentLoaded', async () => {
-    applyReadingMode(readingMode, false);
-
-    try {
-        await initDB();
-        const books = await getAllBooksFromDB();
-        if (books.length > 0) {
-            books.sort((a, b) => b.updatedAt - a.updatedAt);
-            const lastBook = books[0];
-            currentFileKey = lastBook.key;
-            parseAndRenderChapters(lastBook.content, () => {
-                toolbar.classList.remove('hidden');
-                restoreBookPosition();
-                showToast(`自動載入最近書籍: ${lastBook.name}`);
-            });
-        }
-    } catch (e) {
-        console.error('初始化書架失敗', e);
-    }
-});
-</script>
-
-</body>
-</html>
+    textContent.style.transform = `translate3d(-${offsetX}px, 0, 0)`; pageIndicator.textContent = `${currentPage
