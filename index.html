@@ -32,7 +32,6 @@ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica N
 height: 100%;
 overflow: hidden;
 }
-/* 工具列：預設完全隱藏，不佔頂部空間 */
 .toolbar {
 position: fixed;
 top: 0;
@@ -102,7 +101,6 @@ background: #4CAF50;
 cursor: pointer;
 }
 input[type="file"] { display: none; }
-/* 閱讀區：直接撐滿全高，無頂部留白 */
 .reader-wrap {
 width: 100%;
 height: 100%;
@@ -310,9 +308,9 @@ const STORE_NAME = 'books';
 let db = null;
 let fullText = "";
 let pageList = [];
-let currentCharOffset = 0; // 基准：字元偏移，唔再用頁號做存檔基准
-const CHARS_PER_PAGE = 1400;
+let currentCharOffset = 0;
 let wheelLock = false;
+let resizeTimer = null;
 
 function initDB() {
 return new Promise((resolve, reject) => {
@@ -347,7 +345,7 @@ function deleteBookFromDB(key) {
 return new Promise((resolve) => {
 if (!db) return resolve();
 const tx = db.transaction(STORE_NAME, 'readwrite');
-const req = tx.objectStore(STORE_NAME, 'readwrite').delete(key);
+const req = tx.objectStore(STORE_NAME).delete(key);
 req.onsuccess = () => resolve();
 req.onerror = () => resolve();
 });
@@ -398,13 +396,11 @@ toastNotice.classList.add('show');
 if (toastTimer) clearTimeout(toastTimer);
 toastTimer = setTimeout(() => { toastNotice.classList.remove('show'); }, 2500);
 }
-// 點擊畫面切換工具列
 document.addEventListener('click', (e) => {
 if (toolbar.contains(e.target) || shelfModal.contains(e.target) || tocModal.contains(e.target)
 || prevBtn.contains(e.target) || nextBtn.contains(e.target)) return;
 toolbar.classList.toggle('show');
 });
-// 滑鼠滾輪翻頁
 document.addEventListener('wheel', (e) => {
 if (wheelLock) return;
 if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
@@ -427,7 +423,32 @@ if (!currentFileKey) return 0;
 return parseInt(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
 }
 
-// 由字元偏移，搵屬於第幾頁
+function getDynamicCharsPerPage() {
+const colWidth = leftPage.clientWidth - 24;
+const colHeight = leftPage.clientHeight - 24;
+const charsPerLine = Math.floor(colWidth / currentFontSize);
+const linesPerPage = Math.floor(colHeight / (currentFontSize * currentLineHeight));
+return Math.max(100, Math.floor(charsPerLine * linesPerPage * 0.85));
+}
+
+function splitTextToPages(text) {
+const pages = [];
+let ptr = 0;
+const perPage = getDynamicCharsPerPage();
+while(ptr < text.length) {
+let end = ptr + perPage;
+if(end >= text.length) {
+pages.push(text.slice(ptr));
+break;
+}
+let brPos = text.indexOf('\n', end);
+if(brPos === -1) brPos = end;
+pages.push(text.slice(ptr, brPos+1));
+ptr = brPos + 1;
+}
+return pages;
+}
+
 function charOffsetToPageIndex(offset) {
 if (!pageList.length) return 0;
 let ptr = 0;
@@ -450,25 +471,6 @@ pageInfo.textContent = `${pageIdx+1} / ${pageList.length}`;
 saveProgress(currentCharOffset);
 }
 
-// 全文分頁
-function splitTextToPages(text) {
-const pages = [];
-let ptr = 0;
-while(ptr < text.length) {
-let end = ptr + CHARS_PER_PAGE;
-if(end >= text.length) {
-pages.push(text.slice(ptr));
-break;
-}
-let brPos = text.indexOf('\n', end);
-if(brPos === -1) brPos = end;
-pages.push(text.slice(ptr, brPos+1));
-ptr = brPos + 1;
-}
-return pages;
-}
-
-// 掃章節，淨存 charPos + percent
 function parseChaptersForToc(text) {
 chapterElements = [];
 const chapterRegex = /第([0-9零一二三四五六七八九十百千萬億]+)(節|章|回|卷|幕)([^\n]*)/g;
@@ -499,7 +501,6 @@ item.className = 'drawer-item';
 item.innerHTML = `<span>${ch.title}</span><span class="item-subtext">${ch.percent.toFixed(1)}%</span>`;
 item.onclick = ()=>{
 tocModal.classList.remove('active');
-// 重點：直接跳到章節開頭字元，render 時會令佢喺左頁頂
 currentCharOffset = ch.charPos;
 renderByOffset();
 };
@@ -507,7 +508,6 @@ tocList.appendChild(item);
 })
 }
 
-// 由 currentCharOffset 渲染：搵對應頁，左頁頂就係呢個 offset 開始嘅內容
 function renderByOffset() {
 if(!pageList.length) return;
 let ptr = 0;
@@ -527,7 +527,6 @@ updateProgressUI();
 function goPageDelta(delta) {
 const currentPage = charOffsetToPageIndex(currentCharOffset);
 const nextPage = Math.max(0, Math.min(currentPage + delta, pageList.length - 1));
-// 計算 nextPage 嘅起始字元位置
 let ptr = 0;
 for(let i=0;i<nextPage;i++) ptr += pageList[i].length;
 currentCharOffset = ptr;
@@ -562,7 +561,6 @@ currentCharOffset = ptr;
 renderByOffset();
 });
 
-// 改字體 / 行距：重新分頁 + 重掃章節 + 保留而家嘅 charOffset 位置
 function adjustStyles(type, delta) {
 if (type === 'font') {
 currentFontSize = Math.max(14, Math.min(40, currentFontSize + delta));
@@ -570,12 +568,11 @@ document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`
 localStorage.setItem('reader_font_size', currentFontSize);
 showToast(`字體大小: ${currentFontSize}px`);
 } else if (type === 'line') {
-currentLineHeight = Math.max(1.0, Math.min(2.2), parseFloat((currentLineHeight + delta).toFixed(1)));
+currentLineHeight = Math.max(1.0, Math.min(2.2, parseFloat((currentLineHeight + delta).toFixed(1))));
 document.documentElement.style.setProperty('--line-height', currentLineHeight);
 localStorage.setItem('reader_line_height', currentLineHeight);
 showToast(`行距大小: ${currentLineHeight}`);
 }
-// 重排
 if(fullText){
 pageList = splitTextToPages(fullText);
 parseChaptersForToc(fullText);
@@ -587,6 +584,18 @@ document.getElementById('fontIncBtn').addEventListener('click', (e) => { e.stopP
 document.getElementById('fontDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', -2); });
 document.getElementById('lineIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', 0.1); });
 document.getElementById('lineDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', -0.1); });
+
+window.addEventListener('resize', () => {
+clearTimeout(resizeTimer);
+resizeTimer = setTimeout(() => {
+if (fullText) {
+pageList = splitTextToPages(fullText);
+parseChaptersForToc(fullText);
+renderToc();
+renderByOffset();
+}
+}, 250);
+});
 
 function setupDrawer(modalId, btnId, closeId) {
 const modal = document.getElementById(modalId);
