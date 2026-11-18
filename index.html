@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Simple Reader 揭頁雙欄版</title>
+<title>Simple readerv3</title>
 <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/cn2t.js"></script>
 <style>
 :root {
@@ -17,7 +17,7 @@
 --font-size: 22px;
 --line-height: 1.45;
 --col-gap: 40px;
---page-padding: 24px;
+--page-padding: 20px;
 }
 
 *, *::before, *::after {
@@ -101,15 +101,15 @@ background: #4CAF50;
 cursor: pointer;
 }
 input[type="file"] { display: none; }
-/* 翻頁閱讀區：雙欄書本 */
+/* 翻頁閱讀區：修正高度，減頂留白，確保底部顯示完整 */
 .reader-wrap {
 width: 100%;
-height: calc(100% - 86px);
-margin-top: 86px;
+height: calc(100% - 82px);
+margin-top: 82px;
 display: flex;
 justify-content: center;
-align-items: center;
-padding: 16px;
+align-items: stretch;
+padding: 8px 16px 48px 16px;
 }
 .book-container {
 display: flex;
@@ -132,7 +132,7 @@ word-break: break-word;
 }
 .page-footer {
 position: fixed;
-bottom: 12px;
+bottom: 8px;
 left: 0;
 right: 0;
 display: flex;
@@ -149,7 +149,7 @@ color: #aaa;
 font-size: 13px;
 line-height: 34px;
 }
-/* 提示、抽屜樣式沿用 */
+/* 提示、抽屜樣式 */
 .loading-status {
 font-size: 11px;
 color: #aaa;
@@ -309,11 +309,10 @@ flex-shrink: 0;
 const DB_NAME = 'SimpleReaderDB';
 const STORE_NAME = 'books';
 let db = null;
-// 翻頁相關全域
 let fullText = "";
 let pageList = [];
 let currentPageIndex = 0;
-const CHARS_PER_PAGE = 1400; // 每頁大約字數，可自行調整，數字越大頁越少
+const CHARS_PER_PAGE = 1400;
 
 function initDB() {
 return new Promise((resolve, reject) => {
@@ -348,7 +347,7 @@ function deleteBookFromDB(key) {
 return new Promise((resolve) => {
 if (!db) return resolve();
 const tx = db.transaction(STORE_NAME, 'readwrite');
-const req = tx.objectStore(STORE_NAME).delete(key);
+const req = tx.objectStore(STORE_NAME, 'readwrite').delete(key);
 req.onsuccess = () => resolve();
 req.onerror = () => resolve();
 });
@@ -420,7 +419,7 @@ progressSlider.value = percent;
 pageInfo.textContent = `${currentPageIndex+1} / ${pageList.length}`;
 saveProgress(currentPageIndex);
 }
-// 分頁：把全文切成一頁一頁
+
 function splitTextToPages(text) {
 const pages = [];
 let ptr = 0;
@@ -430,7 +429,6 @@ if(end >= text.length) {
 pages.push(text.slice(ptr));
 break;
 }
-// 優先在換行切，避免單字硬切
 let brPos = text.indexOf('\n', end);
 if(brPos === -1) brPos = end;
 pages.push(text.slice(ptr, brPos+1));
@@ -438,7 +436,60 @@ ptr = brPos + 1;
 }
 return pages;
 }
-// 渲染當前頁（左右雙欄）
+
+// 重點：掃描章節後，計算每一章對應邊一頁
+function parseChaptersForToc(text, pageArray) {
+chapterElements = [];
+const lines = text.split(/\r?\n/);
+const chapterRegex = /^\s*(?:第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷]|chapter\s*\d+|[0-9一二三四五六七八九十百]+[、\.])/i;
+let charPos = 0;
+// 預先建立字數 -> 頁號對照表
+const pageCharOffset = [0];
+let sum = 0;
+for(let p of pageArray) {
+sum += p.length;
+pageCharOffset.push(sum);
+}
+for(let line of lines) {
+const trimmed = line.trim();
+if (trimmed.length > 0 && trimmed.length < 50 && chapterRegex.test(trimmed)) {
+// 搵呢個文字位置對應嘅頁碼
+let targetPage = 0;
+for(let i=0; i < pageCharOffset.length; i++){
+if(charPos >= pageCharOffset[i]) targetPage = i;
+else break;
+}
+const percent = (charPos / text.length) * 100;
+chapterElements.push({
+title: trimmed,
+page: Math.min(targetPage, pageArray.length - 1),
+percent: percent
+});
+}
+charPos += line.length + 1;
+}
+}
+
+function renderToc() {
+tocList.innerHTML = '';
+if (chapterElements.length === 0) {
+tocList.innerHTML = '<div class="drawer-empty">未偵測到明確的章節目錄</div>';
+tocBtn.style.display = 'none';
+return;
+}
+tocBtn.style.display = 'block';
+chapterElements.forEach((ch)=>{
+const item = document.createElement('div');
+item.className = 'drawer-item';
+item.innerHTML = `<span>${ch.title}</span><span class="item-subtext">頁${ch.page+1} · ${ch.percent.toFixed(1)}%</span>`;
+item.onclick = ()=>{
+tocModal.classList.remove('active');
+renderPage(ch.page);
+};
+tocList.appendChild(item);
+})
+}
+
 function renderPage(idx) {
 if(pageList.length === 0) return;
 currentPageIndex = Math.max(0, Math.min(idx, pageList.length - 1));
@@ -446,17 +497,14 @@ leftPage.textContent = pageList[currentPageIndex];
 rightPage.textContent = (currentPageIndex+1 < pageList.length) ? pageList[currentPageIndex+1] : "";
 updateProgressUI();
 }
-prevBtn.onclick = () => {
-renderPage(currentPageIndex - 2);
-};
-nextBtn.onclick = () => {
-renderPage(currentPageIndex + 2);
-};
-// 鍵盤 ← → 翻頁
+
+prevBtn.onclick = () => { renderPage(currentPageIndex - 2); };
+nextBtn.onclick = () => { renderPage(currentPageIndex + 2); };
 document.addEventListener('keydown', e=>{
 if(e.key === 'ArrowLeft') renderPage(currentPageIndex - 2);
 if(e.key === 'ArrowRight') renderPage(currentPageIndex + 2);
 });
+
 progressSlider.addEventListener('mousedown', () => isUserDraggingSlider = true);
 progressSlider.addEventListener('touchstart', () => isUserDraggingSlider = true, { passive: true });
 progressSlider.addEventListener('input', (e) => {
@@ -505,40 +553,6 @@ modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList
 setupDrawer('tocModal', 'tocBtn', 'tocClose');
 setupDrawer('shelfModal', 'shelfBtn', 'shelfClose');
 
-function parseChaptersForToc(text) {
-chapterElements = [];
-const lines = text.split(/\r?\n/);
-const chapterRegex = /^\s*(?:第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷]|chapter\s*\d+|[0-9一二三四五六七八九十百]+[、\.])/i;
-let charPos = 0;
-for(let line of lines) {
-const trimmed = line.trim();
-if (trimmed.length > 0 && trimmed.length < 50 && chapterRegex.test(trimmed)) {
-const percent = (charPos / text.length) * 100;
-chapterElements.push({title: trimmed, percent});
-}
-charPos += line.length + 1;
-}
-}
-function renderToc() {
-tocList.innerHTML = '';
-if (chapterElements.length === 0) {
-tocList.innerHTML = '<div class="drawer-empty">未偵測到明確的章節目錄</div>';
-tocBtn.style.display = 'none';
-return;
-}
-tocBtn.style.display = 'block';
-chapterElements.forEach((ch)=>{
-const item = document.createElement('div');
-item.className = 'drawer-item';
-item.innerText = ch.title;
-item.onclick = ()=>{
-tocModal.classList.remove('active');
-const targetIdx = Math.floor(ch.percent / 100 * (pageList.length - 1));
-renderPage(targetIdx);
-};
-tocList.appendChild(item);
-})
-}
 async function renderShelf() {
 shelfList.innerHTML = '';
 const books = await getAllBooksFromDB();
@@ -570,7 +584,7 @@ currentFileKey = book.key;
 statusText.textContent = '載入中...';
 fullText = book.content;
 pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText);
+parseChaptersForToc(fullText, pageList);
 renderToc();
 const savedPage = getSavedProgress();
 renderPage(savedPage);
@@ -609,7 +623,7 @@ await new Promise(r => setTimeout(r, 0));
 }
 fullText = formatQuotes(converter(fullRawText));
 pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText);
+parseChaptersForToc(fullText, pageList);
 renderToc();
 saveBookToDB(currentFileKey, file.name, fullText);
 const savedPage = getSavedProgress();
@@ -632,7 +646,7 @@ const lastBook = books[0];
 currentFileKey = lastBook.key;
 fullText = lastBook.content;
 pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText);
+parseChaptersForToc(fullText, pageList);
 renderToc();
 const savedPage = getSavedProgress();
 renderPage(savedPage);
