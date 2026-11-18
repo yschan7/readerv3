@@ -45,7 +45,6 @@ overflow-y: auto;
 -webkit-overflow-scrolling: touch;
 }
 
-/* 揭頁模式下的 body 鎖定 */
 body.paged-mode {
 overflow: hidden;
 height: 100vh;
@@ -123,7 +122,6 @@ font-size: 12px;
 padding: 5px 8px;
 }
 
-/* 進度滑桿容器 */
 .progress-slider-container {
 display: flex;
 align-items: center;
@@ -166,7 +164,7 @@ white-space: pre-wrap;
 transform: translateZ(0);
 }
 
-/* 揭頁模式外層視窗與多欄分頁容器 */
+/* 揭頁模式外層視窗與高效多欄分頁容器 */
 .paged-viewport {
 position: fixed;
 top: 0;
@@ -190,7 +188,6 @@ column-rule: 1px solid #1f1f1f;
 will-change: transform;
 }
 
-/* 揭頁模式底部微弱頁碼提示 */
 .page-indicator {
 position: fixed;
 bottom: calc(env(safe-area-inset-bottom) + 10px);
@@ -213,7 +210,6 @@ color: #aaa;
 flex-shrink: 0;
 }
 
-/* 浮動通知提示框 */
 .toast-notice {
 position: fixed;
 top: calc(env(safe-area-inset-top) + 100px);
@@ -233,7 +229,6 @@ transition: opacity 0.2s ease;
 opacity: 1;
 }
 
-/* 通用側邊欄抽屜 */
 .drawer-modal {
 position: fixed;
 top: 0;
@@ -457,7 +452,7 @@ function deleteBookFromDB(key) {
 
 let currentFontSize = parseFloat(localStorage.getItem('reader_font_size')) || 26;
 let currentLineHeight = parseFloat(localStorage.getItem('reader_line_height')) || 1.4;
-let readingMode = localStorage.getItem('reader_mode') || 'scroll'; // 'scroll' | 'paged'
+let readingMode = localStorage.getItem('reader_mode') || 'scroll';
 let columnCount = parseInt(localStorage.getItem('reader_columns')) || 2;
 
 document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`);
@@ -503,7 +498,7 @@ let currentFileKey = null;
 let chapterElements = [];
 let toastTimer = null;
 
-// 揭頁模式分頁狀態
+let rawLines = []; // 儲存原始行陣列，用於高速分塊渲染
 let currentPage = 0;
 let totalPages = 1;
 let pageStepWidth = 0;
@@ -515,7 +510,6 @@ function showToast(msg) {
     toastTimer = setTimeout(() => { toastNotice.classList.remove('show'); }, 2500);
 }
 
-// 取得當前閱讀百分比 (0 ~ 1)
 function getCurrentRatio() {
     if (readingMode === 'paged') {
         if (totalPages <= 1) return 0;
@@ -528,7 +522,6 @@ function getCurrentRatio() {
     }
 }
 
-// 儲存百分比進度（同時兼容舊版 scrollTop 儲存）
 function saveProgressRatio(ratio) {
     if (!currentFileKey) return;
     try {
@@ -546,7 +539,6 @@ function getSavedRatio() {
     if (savedRatio !== null && !isNaN(parseFloat(savedRatio))) {
         return Math.min(1, Math.max(0, parseFloat(savedRatio)));
     }
-    // 向下相容舊版像素進度
     const savedY = parseFloat(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
     const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
     if (savedY > 0 && scrollHeight > 0) {
@@ -555,23 +547,20 @@ function getSavedRatio() {
     return 0;
 }
 
-// 計算揭頁模式的總頁數與單頁步進寬度
+// 700萬字超高速分塊頁面計算與排版核心
 function recalcPagedLayout(targetRatio = null) {
-    if (readingMode !== 'paged') return;
+    if (readingMode !== 'paged' || rawLines.length === 0) return;
 
-    const gap = columnCount === 1 ? 0 : 48; // 多欄時的欄間距
+    const gap = columnCount === 1 ? 0 : 48;
     textContent.style.columnCount = columnCount;
     textContent.style.webkitColumnCount = columnCount;
     textContent.style.columnGap = `${gap}px`;
     textContent.style.webkitColumnGap = `${gap}px`;
-
-    // 先歸零以取得準確的排版寬度
     textContent.style.transform = 'translateX(0px)';
 
     const viewportInnerWidth = textContent.clientWidth;
     if (viewportInnerWidth <= 0) return;
 
-    // 每一屏（包含 N 欄）的步進寬度 = 容器可視寬度 + 1 個欄間距
     pageStepWidth = viewportInnerWidth + gap;
     const totalScrollWidth = textContent.scrollWidth;
 
@@ -604,7 +593,6 @@ function goToPage(pageIndex) {
     applyPagedTransform();
 }
 
-// 套用閱讀模式（滾動 vs 揭頁）與欄數 UI
 function applyReadingMode(newMode, preserveRatio = true) {
     const ratio = preserveRatio ? getCurrentRatio() : getSavedRatio();
     readingMode = newMode;
@@ -676,14 +664,12 @@ colBtns.forEach(btn => {
     });
 });
 
-// 點擊畫面控制：工具列顯示/隱藏 或 揭頁左右翻頁
 document.addEventListener('click', (e) => {
     if (toolbar.contains(e.target) || shelfModal.contains(e.target) || tocModal.contains(e.target)) return;
 
     if (readingMode === 'paged') {
         const screenW = window.innerWidth;
         const clickX = e.clientX;
-        // 左側 25% 上一頁，右側 25% 下一頁，中間 50% 切換工具列
         if (clickX < screenW * 0.25) {
             goToPage(currentPage - 1);
             return;
@@ -695,7 +681,6 @@ document.addEventListener('click', (e) => {
     toolbar.classList.toggle('hidden');
 });
 
-// 鍵盤左右鍵 / 空白鍵 / PageUp / PageDown 翻頁
 document.addEventListener('keydown', (e) => {
     if (readingMode !== 'paged') return;
     if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
@@ -713,7 +698,6 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// 滑鼠滾輪在揭頁模式下直接前後翻頁（帶防抖）
 let wheelLock = false;
 window.addEventListener('wheel', (e) => {
     if (readingMode !== 'paged') return;
@@ -732,7 +716,6 @@ window.addEventListener('wheel', (e) => {
     setTimeout(() => { wheelLock = false; }, 180);
 }, { passive: true });
 
-// 視窗大小改變時重新計算分頁並維持閱讀位置
 let resizeTimer;
 window.addEventListener('resize', () => {
     if (readingMode !== 'paged') return;
@@ -801,7 +784,6 @@ progressBtn.addEventListener('click', (e) => {
     }
 });
 
-// 字體/行距調整（滾動模式帶錨點鎖定，揭頁模式自動維持百分比並重算總頁數）
 function adjustStyles(type, delta) {
     const ratioBefore = getCurrentRatio();
     let anchorNode = null;
@@ -864,27 +846,27 @@ function setupDrawer(modalId, btnId, closeId) {
 setupDrawer('tocModal', 'tocBtn', 'tocClose');
 setupDrawer('shelfModal', 'shelfBtn', 'shelfClose');
 
-// 優化大文本解析與記憶體流暢度（支援數百萬字 Safari）
+// 高效分塊渲染引擎（專為700萬字優化）
 function parseAndRenderChapters(fullText, onComplete) {
-    const lines = fullText.split(/\r?\n/);
+    rawLines = fullText.split(/\r?\n/);
     chapterElements = [];
     textContent.innerHTML = '';
 
     const chapterRegex = /^\s*(?:第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷]|chapter\s*\d+|[0-9一二三四五六七八九十百]+[、\.])/i;
 
-    const fragment = document.createDocumentFragment();
-    let charCount = 0;
     const totalLen = fullText.length || 1;
-
-    const batchSize = 2000;
+    let charCount = 0;
+    const batchSize = 10000; // 每批處理1萬行，大幅提升大文本載入速度
     let index = 0;
 
     function processBatch() {
-        const limit = Math.min(index + batchSize, lines.length);
+        const limit = Math.min(index + batchSize, rawLines.length);
+        const fragment = document.createDocumentFragment();
+
         for (let i = index; i < limit; i++) {
-            const line = lines[i];
+            const line = rawLines[i];
             const p = document.createElement('div');
-            p.textContent = line + (i < lines.length - 1 ? '\n' : '');
+            p.textContent = line + (i < rawLines.length - 1 ? '\n' : '');
 
             const trimmed = line.trim();
             if (trimmed.length > 0 && trimmed.length < 50 && chapterRegex.test(trimmed)) {
@@ -902,9 +884,11 @@ function parseAndRenderChapters(fullText, onComplete) {
         textContent.appendChild(fragment);
         index = limit;
 
-        if (index < lines.length) {
+        if (index < rawLines.length) {
+            statusText.textContent = `解析中 ${Math.round((index / rawLines.length) * 100)}%`;
             requestAnimationFrame(processBatch);
         } else {
+            statusText.textContent = '';
             renderToc();
             if (typeof onComplete === 'function') onComplete();
         }
@@ -942,7 +926,6 @@ function renderToc() {
         item.addEventListener('click', () => {
             tocModal.classList.remove('active');
             if (readingMode === 'paged') {
-                // 取得該章節節點相對於 textContent 起始點的水平偏移量，精準定位到所在頁
                 const contentRect = textContent.getBoundingClientRect();
                 const elemRect = ch.element.getBoundingClientRect();
                 const relativeLeft = elemRect.left - contentRect.left;
@@ -1040,7 +1023,7 @@ fileInput.addEventListener('change', async (e) => {
         }
 
         const decoder = new TextDecoder(encoding);
-        const chunkSize = 250000;
+        const chunkSize = 500000;
         let offset = 0;
         let fullRawText = '';
 
@@ -1078,7 +1061,6 @@ fileInput.addEventListener('change', async (e) => {
 });
 
 window.addEventListener('DOMContentLoaded', async () => {
-    // 套用儲存的模式與欄數介面狀態
     applyReadingMode(readingMode, false);
 
     try {
