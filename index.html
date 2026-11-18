@@ -45,14 +45,12 @@ overflow-y: auto;
 -webkit-overflow-scrolling: touch;
 }
 
-/* 揭頁模式下的 body 鎖定視口 */
 body.paged-mode {
 height: 100vh;
 height: 100dvh;
 overflow: hidden;
 }
 
-/* 雙行頂部工具列 */
 .toolbar {
 position: fixed;
 top: 0;
@@ -111,7 +109,6 @@ font-size: 12px;
 padding: 5px 8px;
 }
 
-/* 進度滑桿容器 */
 .progress-slider-container {
 display: flex;
 align-items: center;
@@ -143,7 +140,6 @@ input[type="file"] {
 display: none;
 }
 
-/* 文章內容區塊 - 預設無限滾動模式 */
 .content-container {
 width: 100%;
 padding: calc(env(safe-area-inset-top) + 95px) 0px calc(env(safe-area-inset-bottom) + 60px) 0px;
@@ -154,7 +150,6 @@ white-space: pre-wrap;
 transform: translateZ(0);
 }
 
-/* 文章內容區塊 - 3 欄揭頁模式 */
 body.paged-mode .content-container {
 width: 100vw;
 height: 100vh;
@@ -171,13 +166,11 @@ overflow-x: hidden;
 overflow-y: hidden;
 }
 
-/* 防止單行文字在欄底被腰斬 */
 body.paged-mode .content-container > div {
 break-inside: avoid-column;
 -webkit-column-break-inside: avoid;
 }
 
-/* 揭頁模式底部微弱頁碼提示 */
 .page-indicator {
 display: none;
 position: fixed;
@@ -199,7 +192,6 @@ color: #aaa;
 flex-shrink: 0;
 }
 
-/* 浮動通知提示框 */
 .toast-notice {
 position: fixed;
 top: calc(env(safe-area-inset-top) + 100px);
@@ -219,7 +211,6 @@ transition: opacity 0.2s ease;
 opacity: 1;
 }
 
-/* 通用側邊欄抽屜 */
 .drawer-modal {
 position: fixed;
 top: 0;
@@ -469,5 +460,4 @@ const tocModal = document.getElementById('tocModal');
 const tocClose = document.getElementById('tocClose');
 const tocList = document.getElementById('tocList');
 
-let isUserDraggingSlider = false;
-let currentFileKey = null;
+let isUserDraggingSlider = false
