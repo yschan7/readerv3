@@ -45,12 +45,14 @@ overflow-y: auto;
 -webkit-overflow-scrolling: touch;
 }
 
+/* 揭頁模式下的 body 鎖定視口 */
 body.paged-mode {
 height: 100vh;
 height: 100dvh;
 overflow: hidden;
 }
 
+/* 雙行頂部工具列 */
 .toolbar {
 position: fixed;
 top: 0;
@@ -109,6 +111,7 @@ font-size: 12px;
 padding: 5px 8px;
 }
 
+/* 進度滑桿容器 */
 .progress-slider-container {
 display: flex;
 align-items: center;
@@ -140,6 +143,7 @@ input[type="file"] {
 display: none;
 }
 
+/* 文章內容區塊 - 預設無限滾動模式 */
 .content-container {
 width: 100%;
 padding: calc(env(safe-area-inset-top) + 95px) 0px calc(env(safe-area-inset-bottom) + 60px) 0px;
@@ -150,6 +154,7 @@ white-space: pre-wrap;
 transform: translateZ(0);
 }
 
+/* 文章內容區塊 - 3 欄揭頁模式 */
 body.paged-mode .content-container {
 width: 100vw;
 height: 100vh;
@@ -166,11 +171,13 @@ overflow-x: hidden;
 overflow-y: hidden;
 }
 
+/* 防止單行文字在欄底被腰斬 */
 body.paged-mode .content-container > div {
 break-inside: avoid-column;
 -webkit-column-break-inside: avoid;
 }
 
+/* 揭頁模式底部微弱頁碼提示 */
 .page-indicator {
 display: none;
 position: fixed;
@@ -192,6 +199,7 @@ color: #aaa;
 flex-shrink: 0;
 }
 
+/* 浮動通知提示框 */
 .toast-notice {
 position: fixed;
 top: calc(env(safe-area-inset-top) + 100px);
@@ -211,6 +219,7 @@ transition: opacity 0.2s ease;
 opacity: 1;
 }
 
+/* 通用側邊欄抽屜 */
 .drawer-modal {
 position: fixed;
 top: 0;
@@ -460,4 +469,594 @@ const tocModal = document.getElementById('tocModal');
 const tocClose = document.getElementById('tocClose');
 const tocList = document.getElementById('tocList');
 
-let isUserDraggingSlider = false
+let isUserDraggingSlider = false;
+let currentFileKey = null; 
+let chapterElements = []; 
+let toastTimer = null;
+let currentPage = 0;
+let totalPages = 1;
+
+function showToast(msg) {
+    toastNotice.textContent = msg;
+    toastNotice.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastNotice.classList.remove('show'); }, 2500);
+}
+
+// 計算揭頁模式單頁步進寬度（視口寬度減去左右 padding + column-gap）
+function getPageStepWidth() {
+    const style = window.getComputedStyle(textContent);
+    const padLeft = parseFloat(style.paddingLeft) || 24;
+    const padRight = parseFloat(style.paddingRight) || 24;
+    const colGap = parseFloat(style.columnGap) || 36;
+    return textContent.clientWidth - padLeft - padRight + colGap;
+}
+
+function recalcPagination() {
+    if (!isPagedMode) return;
+    const step = getPageStepWidth();
+    if (step <= 0) return;
+    const style = window.getComputedStyle(textContent);
+    const padLeft = parseFloat(style.paddingLeft) || 24;
+    const padRight = parseFloat(style.paddingRight) || 24;
+    const contentScrollWidth = Math.max(0, textContent.scrollWidth - padLeft - padRight);
+    totalPages = Math.max(1, Math.round((contentScrollWidth + (parseFloat(style.columnGap) || 36)) / step));
+    currentPage = Math.min(totalPages - 1, Math.max(0, currentPage));
+    textContent.scrollLeft = currentPage * step;
+    pageIndicator.textContent = `${currentPage + 1} / ${totalPages}`;
+}
+
+// 取得目前閱讀百分比 (0 ~ 100)
+function getCurrentPercent() {
+    if (isPagedMode) {
+        if (totalPages <= 1) return 0;
+        return Math.min(100, Math.max(0, (currentPage / (totalPages - 1)) * 100));
+    } else {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+        const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        if (scrollHeight <= 0) return 0;
+        return Math.min(100, Math.max(0, (scrollTop / scrollHeight) * 100));
+    }
+}
+
+// 依據百分比跳轉（兼容滾動與揭頁雙模式）
+function seekToPercent(percent) {
+    const clamped = Math.min(100, Math.max(0, percent));
+    if (isPagedMode) {
+        recalcPagination();
+        const step = getPageStepWidth();
+        currentPage = totalPages <= 1 ? 0 : Math.round((clamped / 100) * (totalPages - 1));
+        currentPage = Math.min(totalPages - 1, Math.max(0, currentPage));
+        textContent.scrollLeft = currentPage * step;
+        pageIndicator.textContent = `${currentPage + 1} / ${totalPages}`;
+    } else {
+        const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        window.scrollTo(0, (clamped / 100) * scrollHeight);
+    }
+    updateProgressUI();
+}
+
+// 揭頁模式上下翻頁
+function turnPage(delta) {
+    if (!isPagedMode) return;
+    recalcPagination();
+    const nextPage = currentPage + delta;
+    if (nextPage < 0) {
+        showToast('已經是第一頁');
+        return;
+    }
+    if (nextPage >= totalPages) {
+        showToast('已經是最後一頁');
+        return;
+    }
+    currentPage = nextPage;
+    textContent.scrollLeft = currentPage * getPageStepWidth();
+    pageIndicator.textContent = `${currentPage + 1} / ${totalPages}`;
+    updateProgressUI();
+}
+
+// 切換無限滾動 / 3 欄揭頁模式
+function applyReadingMode(paged, preservePercent = true) {
+    const savedPct = preservePercent ? getCurrentPercent() : getSavedPercent();
+    isPagedMode = paged;
+    localStorage.setItem('reader_mode', isPagedMode ? 'paged' : 'scroll');
+
+    if (isPagedMode) {
+        document.body.classList.add('paged-mode');
+        modeToggleBtn.textContent = '📜 無限滾動';
+        modeToggleBtn.classList.add('mode-active');
+        window.scrollTo(0, 0);
+        requestAnimationFrame(() => {
+            recalcPagination();
+            seekToPercent(savedPct);
+        });
+    } else {
+        document.body.classList.remove('paged-mode');
+        modeToggleBtn.textContent = '📖 3欄揭頁';
+        modeToggleBtn.classList.remove('mode-active');
+        textContent.scrollLeft = 0;
+        requestAnimationFrame(() => {
+            seekToPercent(savedPct);
+        });
+    }
+}
+
+modeToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    applyReadingMode(!isPagedMode, true);
+    showToast(isPagedMode ? '已切換至 3 欄揭頁模式' : '已切換至無限滾動模式');
+});
+
+// 螢幕點擊區域控制（揭頁模式左25%上一頁、右25%下一頁、中間50%切換工具列）
+document.addEventListener('click', (e) => {
+    if (toolbar.contains(e.target) || shelfModal.contains(e.target) || tocModal.contains(e.target)) return;
+    if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
+
+    if (isPagedMode) {
+        // 若使用者正在選取文字複製，則不觸發翻頁
+        const selection = window.getSelection();
+        if (selection && selection.toString().length > 0) return;
+
+        const screenW = window.innerWidth;
+        const clickX = e.clientX;
+        if (clickX < screenW * 0.25) {
+            turnPage(-1);
+        } else if (clickX > screenW * 0.75) {
+            turnPage(1);
+        } else {
+            toolbar.classList.toggle('hidden');
+        }
+    } else {
+        toolbar.classList.toggle('hidden');
+    }
+});
+
+// 鍵盤快捷鍵翻頁（方向鍵 ← / →、PageUp / PageDown、Space / Shift+Space）
+document.addEventListener('keydown', (e) => {
+    if (!isPagedMode) return;
+    if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        e.preventDefault();
+        turnPage(1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        turnPage(-1);
+    } else if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        turnPage(e.shiftKey ? -1 : 1);
+    }
+});
+
+// 滑鼠滾輪前後翻頁（防抖處理，避免觸控板高速連翻多頁）
+let wheelLock = false;
+window.addEventListener('wheel', (e) => {
+    if (!isPagedMode) return;
+    if (shelfModal.classList.contains('active') || tocModal.classList.contains('active')) return;
+
+    e.preventDefault();
+    if (wheelLock) return;
+
+    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (Math.abs(delta) < 12) return;
+
+    wheelLock = true;
+    turnPage(delta > 0 ? 1 : -1);
+    setTimeout(() => { wheelLock = false; }, 160);
+}, { passive: false });
+
+// 視窗尺寸改變時重新計算 3 欄分頁並維持閱讀位置
+window.addEventListener('resize', () => {
+    if (isPagedMode) {
+        const pct = getCurrentPercent();
+        recalcPagination();
+        seekToPercent(pct);
+    }
+});
+
+function saveProgress(percent, scrollTop) {
+    if (!currentFileKey) return;
+    try {
+        localStorage.setItem(`reader_pct_${currentFileKey}`, percent);
+        if (!isPagedMode && typeof scrollTop === 'number') {
+            localStorage.setItem(`reader_pos_${currentFileKey}`, scrollTop);
+        }
+    } catch (e) {}
+}
+
+function getSavedPercent() {
+    if (!currentFileKey) return 0;
+    const savedPct = parseFloat(localStorage.getItem(`reader_pct_${currentFileKey}`));
+    if (!isNaN(savedPct)) return savedPct;
+
+    // 兼容舊版僅儲存 scrollTop 的紀錄
+    const legacyScrollTop = parseFloat(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
+    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    if (legacyScrollTop > 0 && scrollHeight > 0) {
+        return Math.min(100, Math.max(0, (legacyScrollTop / scrollHeight) * 100));
+    }
+    return 0;
+}
+
+function updateProgressUI() {
+    if (isPagedMode) {
+        const percent = getCurrentPercent();
+        if (currentFileKey) saveProgress(percent);
+        if (!isUserDraggingSlider) {
+            progressBtn.textContent = `${percent.toFixed(2)}%`;
+            progressSlider.value = percent;
+        }
+        return;
+    }
+
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    if (scrollHeight <= 0) {
+        if (currentFileKey) saveProgress(0, 0);
+        if (!isUserDraggingSlider) {
+            progressBtn.textContent = '0.00%';
+            progressSlider.value = 0;
+        }
+        return;
+    }
+
+    const percent = Math.min(100, Math.max(0, (scrollTop / scrollHeight) * 100));
+    if (currentFileKey) saveProgress(percent, scrollTop);
+    if (isUserDraggingSlider) return;
+
+    progressBtn.textContent = `${percent.toFixed(2)}%`;
+    progressSlider.value = percent;
+}
+
+let scrollTimer;
+window.addEventListener('scroll', () => {
+    if (isPagedMode) return;
+    if (scrollTimer) cancelAnimationFrame(scrollTimer);
+    scrollTimer = requestAnimationFrame(updateProgressUI);
+}, { passive: true });
+
+progressSlider.addEventListener('mousedown', () => isUserDraggingSlider = true);
+progressSlider.addEventListener('touchstart', () => isUserDraggingSlider = true, { passive: true });
+
+progressSlider.addEventListener('input', (e) => {
+    const targetPercent = parseFloat(e.target.value);
+    progressBtn.textContent = `${targetPercent.toFixed(2)}%`;
+    if (isPagedMode) {
+        recalcPagination();
+        const step = getPageStepWidth();
+        currentPage = totalPages <= 1 ? 0 : Math.round((targetPercent / 100) * (totalPages - 1));
+        currentPage = Math.min(totalPages - 1, Math.max(0, currentPage));
+        textContent.scrollLeft = currentPage * step;
+        pageIndicator.textContent = `${currentPage + 1} / ${totalPages}`;
+        if (currentFileKey) saveProgress(targetPercent);
+    } else {
+        const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        window.scrollTo(0, (targetPercent / 100) * scrollHeight);
+    }
+});
+
+progressSlider.addEventListener('mouseup', () => {
+    isUserDraggingSlider = false;
+    updateProgressUI();
+});
+progressSlider.addEventListener('touchend', () => {
+    isUserDraggingSlider = false;
+    updateProgressUI();
+});
+
+progressBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const currentVal = parseFloat(progressBtn.textContent) || 0;
+    const input = prompt('請輸入跳轉進度 (0 - 100):', currentVal.toFixed(2));
+    if (input !== null) {
+        const targetPercent = parseFloat(input);
+        if (!isNaN(targetPercent)) {
+            seekToPercent(targetPercent);
+        }
+    }
+});
+
+// 字體/行距調整（滾動模式帶錨點鎖定，揭頁模式保持百分比定位）
+function adjustStyles(type, delta) {
+    const beforePercent = getCurrentPercent();
+    let anchorNode = null;
+    let anchorOffset = 0;
+
+    if (!isPagedMode) {
+        const range = document.caretRangeFromPoint ? document.caretRangeFromPoint(10, 100) : null;
+        if (range) {
+            anchorNode = range.startContainer;
+            anchorOffset = range.startOffset;
+        }
+    }
+
+    if (type === 'font') {
+        currentFontSize = Math.max(14, Math.min(50, currentFontSize + delta));
+        document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`);
+        localStorage.setItem('reader_font_size', currentFontSize);
+        showToast(`字體大小: ${currentFontSize}px`);
+    } else if (type === 'line') {
+        currentLineHeight = Math.max(1.0, Math.min(2.5, parseFloat((currentLineHeight + delta).toFixed(1))));
+        document.documentElement.style.setProperty('--line-height', currentLineHeight);
+        localStorage.setItem('reader_line_height', currentLineHeight);
+        showToast(`行距大小: ${currentLineHeight}`);
+    }
+
+    requestAnimationFrame(() => {
+        if (isPagedMode) {
+            recalcPagination();
+            seekToPercent(beforePercent);
+        } else {
+            if (anchorNode && anchorNode.nodeType === Node.TEXT_NODE) {
+                try {
+                    const rectRange = document.createRange();
+                    rectRange.setStart(anchorNode, Math.min(anchorOffset, anchorNode.length));
+                    rectRange.setEnd(anchorNode, Math.min(anchorOffset, anchorNode.length));
+                    const rect = rectRange.getBoundingClientRect();
+                    window.scrollBy(0, rect.top - 100);
+                } catch (e) {}
+            }
+            updateProgressUI();
+        }
+    });
+}
+
+document.getElementById('fontIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', 2); });
+document.getElementById('fontDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', -2); });
+document.getElementById('lineIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', 0.1); });
+document.getElementById('lineDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', -0.1); });
+
+function setupDrawer(modalId, btnId, closeId) {
+    const modal = document.getElementById(modalId);
+    document.getElementById(btnId).addEventListener('click', (e) => {
+        e.stopPropagation();
+        modal.classList.add('active');
+        if (modalId === 'shelfModal') renderShelf();
+    });
+    document.getElementById(closeId).addEventListener('click', () => modal.classList.remove('active'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
+}
+
+setupDrawer('tocModal', 'tocBtn', 'tocClose');
+setupDrawer('shelfModal', 'shelfBtn', 'shelfClose');
+
+// 優化大文本解析與記憶體流暢度（支援數百萬字 Safari，並提供完成回調以便精準恢復進度）
+function parseAndRenderChapters(fullText, onComplete) {
+    const lines = fullText.split(/\r?\n/);
+    chapterElements = [];
+    textContent.innerHTML = '';
+    
+    const chapterRegex = /^\s*(?:第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷]|chapter\s*\d+|[0-9一二三四五六七八九十百]+[、\.])/i;
+    
+    const fragment = document.createDocumentFragment();
+    let charCount = 0;
+    const totalLen = fullText.length || 1;
+
+    // 分批插入 DOM 避免 Safari 卡死/崩潰
+    const batchSize = 2000;
+    let index = 0;
+
+    function processBatch() {
+        const limit = Math.min(index + batchSize, lines.length);
+        for (let i = index; i < limit; i++) {
+            const line = lines[i];
+            const p = document.createElement('div');
+            p.textContent = line + (i < lines.length - 1 ? '\n' : '');
+            
+            const trimmed = line.trim();
+            if (trimmed.length > 0 && trimmed.length < 50 && chapterRegex.test(trimmed)) {
+                p.classList.add('chapter-title-node');
+                const percent = ((charCount / totalLen) * 100).toFixed(2);
+                chapterElements.push({
+                    title: trimmed,
+                    element: p,
+                    percent: percent
+                });
+            }
+            fragment.appendChild(p);
+            charCount += line.length + 1;
+        }
+        textContent.appendChild(fragment);
+        index = limit;
+
+        if (index < lines.length) {
+            requestAnimationFrame(processBatch);
+        } else {
+            renderToc();
+            if (isPagedMode) recalcPagination();
+            if (typeof onComplete === 'function') onComplete();
+        }
+    }
+    processBatch();
+}
+
+function renderToc() {
+    tocList.innerHTML = '';
+    if (chapterElements.length === 0) {
+        tocList.innerHTML = '<div class="drawer-empty">未偵測到明確的章節目錄</div>';
+        tocBtn.style.display = 'none';
+        return;
+    }
+    
+    tocBtn.style.display = 'block';
+    const fragment = document.createDocumentFragment();
+    chapterElements.forEach((ch) => {
+        const item = document.createElement('div');
+        item.className = 'drawer-item';
+        
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = ch.title;
+        titleSpan.style.overflow = 'hidden';
+        titleSpan.style.textOverflow = 'ellipsis';
+        titleSpan.style.flex = '1';
+
+        const percentSpan = document.createElement('span');
+        percentSpan.className = 'item-subtext';
+        percentSpan.textContent = `${ch.percent}%`;
+
+        item.appendChild(titleSpan);
+        item.appendChild(percentSpan);
+
+        item.addEventListener('click', () => {
+            tocModal.classList.remove('active');
+            if (isPagedMode) {
+                recalcPagination();
+                const step = getPageStepWidth();
+                const elRect = ch.element.getBoundingClientRect();
+                const absoluteLeft = elRect.left + textContent.scrollLeft;
+                currentPage = Math.min(totalPages - 1, Math.max(0, Math.floor(absoluteLeft / step)));
+                textContent.scrollLeft = currentPage * step;
+                pageIndicator.textContent = `${currentPage + 1} / ${totalPages}`;
+                updateProgressUI();
+            } else {
+                const elementTop = ch.element.offsetTop;
+                window.scrollTo(0, elementTop - 80);
+                updateProgressUI();
+            }
+        });
+        fragment.appendChild(item);
+    });
+    tocList.appendChild(fragment);
+}
+
+async function renderShelf() {
+    shelfList.innerHTML = '';
+    const books = await getAllBooksFromDB();
+    if (books.length === 0) {
+        shelfList.innerHTML = '<div class="drawer-empty">書架目前沒有儲存的書籍</div>';
+        return;
+    }
+
+    books.sort((a, b) => b.updatedAt - a.updatedAt);
+    books.forEach((book) => {
+        const item = document.createElement('div');
+        item.className = 'drawer-item';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = book.name;
+        titleSpan.style.overflow = 'hidden';
+        titleSpan.style.textOverflow = 'ellipsis';
+        titleSpan.style.flex = '1';
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-btn';
+        delBtn.textContent = '刪除';
+        delBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (confirm(`確定要從書架刪除《${book.name}》嗎？`)) {
+                await deleteBookFromDB(book.key);
+                renderShelf();
+            }
+        });
+
+        item.appendChild(titleSpan);
+        item.appendChild(delBtn);
+
+        item.addEventListener('click', () => {
+            shelfModal.classList.remove('active');
+            currentFileKey = book.key;
+            statusText.textContent = '載入中...';
+            const savedPct = getSavedPercent();
+            parseAndRenderChapters(book.content, () => {
+                seekToPercent(savedPct);
+                statusText.textContent = '';
+                showToast(`已載入《${book.name}》`);
+            });
+        });
+
+        shelfList.appendChild(item);
+    });
+}
+
+fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    currentFileKey = `${file.name}_${file.size}`;
+    statusText.textContent = '載入中...';
+    textContent.innerHTML = '';
+    tocBtn.style.display = 'none';
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+
+        let encoding = 'utf-8';
+        try {
+            const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+            utf8Decoder.decode(uint8Array.subarray(0, 5000));
+        } catch (err) {
+            encoding = 'gb18030';
+        }
+
+        const decoder = new TextDecoder(encoding);
+        const chunkSize = 250000;
+        let offset = 0;
+        let fullRawText = '';
+
+        while (offset < uint8Array.length) {
+            const chunk = uint8Array.subarray(offset, offset + chunkSize);
+            const isFinal = offset + chunkSize >= uint8Array.length;
+            const textChunk = decoder.decode(chunk, { stream: !isFinal });
+
+            fullRawText += textChunk;
+            offset += chunkSize;
+            statusText.textContent = `${Math.min(100, Math.round((offset / uint8Array.length) * 100))}%`;
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        const convertedFullText = formatQuotes(converter(fullRawText));
+        saveBookToDB(currentFileKey, file.name, convertedFullText);
+        const savedPct = getSavedPercent();
+
+        parseAndRenderChapters(convertedFullText, () => {
+            toolbar.classList.remove('hidden');
+            if (savedPct > 0) {
+                seekToPercent(savedPct);
+                statusText.textContent = '已恢復進度';
+                setTimeout(() => { statusText.textContent = ''; }, 2000);
+            } else {
+                seekToPercent(0);
+                statusText.textContent = '';
+            }
+            showToast(`成功載入《${file.name}》`);
+        });
+
+    } catch (err) {
+        console.error(err);
+        statusText.textContent = '載入失敗';
+    }
+});
+
+window.addEventListener('DOMContentLoaded', async () => {
+    // 恢復上次使用的閱讀模式（無限滾動 或 3 欄揭頁）
+    if (isPagedMode) {
+        document.body.classList.add('paged-mode');
+        modeToggleBtn.textContent = '📜 無限滾動';
+        modeToggleBtn.classList.add('mode-active');
+    }
+
+    try {
+        await initDB();
+        const books = await getAllBooksFromDB();
+        if (books.length > 0) {
+            books.sort((a, b) => b.updatedAt - a.updatedAt);
+            const lastBook = books[0];
+            currentFileKey = lastBook.key;
+            const savedPct = getSavedPercent();
+
+            parseAndRenderChapters(lastBook.content, () => {
+                toolbar.classList.remove('hidden');
+                seekToPercent(savedPct);
+                showToast(`自動載入最近書籍: ${lastBook.name}`);
+            });
+        }
+    } catch (e) {
+        console.error('初始化書架失敗', e);
+    }
+});
+</script>
+
+</body>
+</html>
