@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Simple Reader 雙欄版｜頂置+跳轉精準修復</title>
+<title>Simple readerv3</title>
 <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/cn2t.js"></script>
 <style>
 :root {
@@ -437,24 +437,23 @@ ptr = brPos + 1;
 return pages;
 }
 
-// 【核心重寫】先建立全文位置 -> 頁碼對照表，用indexOf搜尋章節標題，不再逐行累加
+// 【重寫：全域搜尋，支援 第X節 / 第X章 / 第X回】
 function parseChaptersForToc(text, pageArray) {
 chapterElements = [];
-// 建立每頁的起始字數偏移表
+// 建立每頁起始偏移表
 const pageOffset = [0];
 let sum = 0;
 for(let p of pageArray) {
 sum += p.length;
 pageOffset.push(sum);
 }
-const chapterRegex = /(第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷])(.*)/;
-let scanPos = 0;
-while(true) {
-const match = chapterRegex.exec(text.slice(scanPos, scanPos + 120));
-if(!match) break;
+// 正則：第 + 數字(中文/阿拉伯) + 節/章/回/卷/幕
+const chapterRegex = /第([0-9零一二三四五六七八九十百千萬億]+)(節|章|回|卷|幕)([^\n]*)/g;
+let match;
+while ((match = chapterRegex.exec(text)) !== null) {
 const titleRaw = match[0].trim();
-const titleStart = scanPos + match.index;
-// 搵呢個文字位置對應邊一頁
+const titleStart = match.index;
+// 搵對應頁碼
 let targetPage = 0;
 for(let i=0; i < pageOffset.length; i++){
 if(titleStart >= pageOffset[i]) targetPage = i;
@@ -468,7 +467,6 @@ charPos: titleStart,
 page: targetPage,
 percent: percent
 });
-scanPos = titleStart + titleRaw.length;
 }
 }
 
