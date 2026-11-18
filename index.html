@@ -2,26 +2,22 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-
-<title>Simple readerv2</title>
-
+<title>Simple Reader 揭頁雙欄版</title>
 <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/cn2t.js"></script>
-
 <style>
 :root {
 --bg-color: #000000;
 --text-color: #e0e0e0;
 --panel-bg: #000000;
 --border-color: #222222;
---font-size: 26px;
---line-height: 1.4;
+--font-size: 22px;
+--line-height: 1.45;
+--col-gap: 40px;
+--page-padding: 24px;
 }
 
 *, *::before, *::after {
@@ -29,23 +25,14 @@ box-sizing: border-box;
 margin: 0;
 padding: 0;
 }
-
-html {
-scroll-behavior: auto !important;
-background-color: var(--bg-color);
-}
-
-body {
+html, body {
 background-color: var(--bg-color);
 color: var(--text-color);
 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-min-height: 100vh;
-overflow-x: hidden;
-overflow-y: auto;
--webkit-overflow-scrolling: touch;
+height: 100%;
+overflow: hidden;
 }
-
-/* 雙行頂部工具列 */
+/* 工具列 */
 .toolbar {
 position: fixed;
 top: 0;
@@ -57,14 +44,10 @@ border-bottom: 1px solid var(--border-color);
 display: flex;
 flex-direction: column;
 gap: 6px;
-padding: calc(env(safe-area-inset-top) + 8px) 10px 8px 10px;
+padding: 8px 10px 8px 10px;
 transition: transform 0.2s ease;
 }
-
-.toolbar.hidden {
-transform: translateY(-100%);
-}
-
+.toolbar.hidden { transform: translateY(-100%); }
 .toolbar-row {
 display: flex;
 flex-wrap: wrap;
@@ -72,7 +55,6 @@ gap: 6px;
 align-items: center;
 width: 100%;
 }
-
 .btn {
 background-color: #1a1a1a;
 color: var(--text-color);
@@ -84,11 +66,7 @@ cursor: pointer;
 user-select: none;
 flex-shrink: 0;
 }
-
-.btn:active {
-opacity: 0.6;
-}
-
+.btn:active { opacity: 0.6; }
 .progress-btn {
 background-color: #1a1a1a;
 color: #4CAF50;
@@ -98,15 +76,12 @@ flex-shrink: 0;
 font-size: 12px;
 padding: 5px 8px;
 }
-
-/* 進度滑桿容器 */
 .progress-slider-container {
 display: flex;
 align-items: center;
 flex: 1;
 min-width: 100px;
 }
-
 .progress-slider {
 width: 100%;
 height: 4px;
@@ -116,7 +91,6 @@ background: #222;
 border-radius: 2px;
 outline: none;
 }
-
 .progress-slider::-webkit-slider-thumb {
 -webkit-appearance: none;
 appearance: none;
@@ -126,33 +100,64 @@ border-radius: 50%;
 background: #4CAF50;
 cursor: pointer;
 }
-
-input[type="file"] {
-display: none;setTimeout
-
-}
-
-/* 文章內容區塊 */
-.content-container {
+input[type="file"] { display: none; }
+/* 翻頁閱讀區：雙欄書本 */
+.reader-wrap {
 width: 100%;
-padding: calc(env(safe-area-inset-top) + 95px) 0px calc(env(safe-area-inset-bottom) + 60px) 0px;
+height: calc(100% - 86px);
+margin-top: 86px;
+display: flex;
+justify-content: center;
+align-items: center;
+padding: 16px;
+}
+.book-container {
+display: flex;
+gap: var(--col-gap);
+max-width: 1400px;
+width: 100%;
+height: 100%;
+}
+.page-col {
+flex: 1;
+height: 100%;
+border: 1px solid #222;
+border-radius: 8px;
+padding: var(--page-padding);
+overflow: hidden;
+white-space: pre-wrap;
 font-size: var(--font-size);
 line-height: var(--line-height);
 word-break: break-word;
-white-space: pre-wrap;
-transform: translateZ(0);
 }
-
+.page-footer {
+position: fixed;
+bottom: 12px;
+left: 0;
+right: 0;
+display: flex;
+justify-content: center;
+gap: 16px;
+z-index: 90;
+}
+.paging-btn {
+padding: 8px 16px;
+font-size: 14px;
+}
+.page-info {
+color: #aaa;
+font-size: 13px;
+line-height: 34px;
+}
+/* 提示、抽屜樣式沿用 */
 .loading-status {
 font-size: 11px;
 color: #aaa;
 flex-shrink: 0;
 }
-
-/* 浮動通知提示框 */
 .toast-notice {
 position: fixed;
-top: calc(env(safe-area-inset-top) + 100px);
+top: 100px;
 right: 20px;
 background-color: rgba(30, 30, 30, 0.95);
 color: #fff;
@@ -165,11 +170,7 @@ pointer-events: none;
 opacity: 0;
 transition: opacity 0.2s ease;
 }
-.toast-notice.show {
-opacity: 1;
-}
-
-/* 通用側邊欄抽屜 */
+.toast-notice.show { opacity: 1; }
 .drawer-modal {
 position: fixed;
 top: 0;
@@ -185,28 +186,18 @@ opacity: 0;
 visibility: hidden;
 transition: opacity 0.2s ease, visibility 0.2s ease;
 }
-
-.drawer-modal.active {
-opacity: 1;
-visibility: visible;
-}
-
+.drawer-modal.active { opacity: 1; visibility: visible; }
 .drawer-content {
 background-color: #000000;
-width: 50%;
+width: 420px;
 height: 100%;
 border-right: 1px solid #333;
 display: flex;
 flex-direction: column;
-box-shadow: 4px 0 15px rgba(0,0,0,0.5);
 transform: translateX(-100%);
 transition: transform 0.25s ease;
 }
-
-.drawer-modal.active .drawer-content {
-transform: translateX(0);
-}
-
+.drawer-modal.active .drawer-content { transform: translateX(0); }
 .drawer-header {
 padding: 14px 16px;
 border-bottom: 1px solid #222;
@@ -216,9 +207,7 @@ align-items: center;
 font-weight: bold;
 font-size: 15px;
 color: #fff;
-background-color: #000000;
 }
-
 .drawer-close {
 background: none;
 border: none;
@@ -226,46 +215,33 @@ color: #aaa;
 font-size: 18px;
 cursor: pointer;
 }
-
 .drawer-list {
 flex: 1;
 overflow-y: auto;
 padding: 4px 0;
--webkit-overflow-scrolling: touch;
 }
-
 .drawer-item {
 padding: 12px 16px;
 font-size: 13px;
 color: #ccc;
 border-bottom: 1px solid #1a1a1a;
 cursor: pointer;
-white-space: nowrap;
-overflow: hidden;
-text-overflow: ellipsis;
 display: flex;
 justify-content: space-between;
 align-items: center;
 }
-
-.drawer-item:active {
-background-color: #222;
-color: #fff;
-}
-
+.drawer-item:active { background-color: #222; color: #fff; }
 .drawer-empty {
 padding: 30px;
 text-align: center;
 color: #666;
 font-size: 13px;
 }
-
 .item-subtext {
 font-size: 11px;
 color: #777;
 flex-shrink: 0;
 }
-
 .delete-btn {
 background: #331111;
 color: #ff6666;
@@ -277,499 +253,395 @@ cursor: pointer;
 margin-left: 8px;
 flex-shrink: 0;
 }
-.delete-btn:active {
-background: #551111;
-}
+.delete-btn:active { background: #551111; }
 </style>
 </head>
 <body>
-
 <div class="toolbar" id="toolbar">
-    <div class="toolbar-row">
-        <label class="btn" for="fileInput">📁 開啟檔案</label>
-        <input type="file" id="fileInput" accept=".txt,.html,.md,.text">
-
-        <button class="btn" id="shelfBtn">📚 書架</button>
-        <button class="btn" id="tocBtn" style="display:none;">📑 目錄</button>
-        <button class="btn" id="fontIncBtn">字體+</button>
-        <button class="btn" id="fontDecBtn">字體-</button>
-        <button class="btn" id="lineIncBtn">行距+</button>
-        <button class="btn" id="lineDecBtn">行距-</button>
-    </div>
-
-    <div class="toolbar-row">
-        <button class="btn progress-btn" id="progressBtn">0.00%</button>
-        <div class="progress-slider-container">
-            <input type="range" class="progress-slider" id="progressSlider" min="0" max="100" step="0.1" value="0">
-        </div>
-        <span class="loading-status" id="statusText"></span>
-    </div>
+<div class="toolbar-row">
+<label class="btn" for="fileInput">📁 開啟檔案</label>
+<input type="file" id="fileInput" accept=".txt,.html,.md,.text">
+<button class="btn" id="shelfBtn">📚 書架</button>
+<button class="btn" id="tocBtn" style="display:none;">📑 目錄</button>
+<button class="btn" id="fontIncBtn">字體+</button>
+<button class="btn" id="fontDecBtn">字體-</button>
+<button class="btn" id="lineIncBtn">行距+</button>
+<button class="btn" id="lineDecBtn">行距-</button>
+</div>
+<div class="toolbar-row">
+<button class="btn progress-btn" id="progressBtn">0.00%</button>
+<div class="progress-slider-container">
+<input type="range" class="progress-slider" id="progressSlider" min="0" max="100" step="0.1" value="0">
+</div>
+<span class="loading-status" id="statusText"></span>
+</div>
 </div>
 
-<div class="content-container" id="textContent">
-請點擊上方「開啟檔案」或從「書架」載入文章...
+<div class="reader-wrap">
+<div class="book-container">
+<div class="page-col" id="leftPage">請點擊上方「開啟檔案」或從「書架」載入文章...</div>
+<div class="page-col" id="rightPage"></div>
+</div>
+</div>
+
+<div class="page-footer">
+<button class="btn paging-btn" id="prevBtn">← 上一頁</button>
+<span class="page-info" id="pageInfo">-- / --</span>
+<button class="btn paging-btn" id="nextBtn">下一頁 →</button>
 </div>
 
 <div class="toast-notice" id="toastNotice"></div>
 
 <div class="drawer-modal" id="tocModal">
-    <div class="drawer-content">
-        <div class="drawer-header">
-            <span>章節</span>
-            <button class="drawer-close" id="tocClose">&times;</button>
-        </div>
-        <div class="drawer-list" id="tocList"></div>
-    </div>
+<div class="drawer-content">
+<div class="drawer-header"><span>章節</span><button class="drawer-close" id="tocClose">&times;</button></div>
+<div class="drawer-list" id="tocList"></div>
 </div>
-
+</div>
 <div class="drawer-modal" id="shelfModal">
-    <div class="drawer-content">
-        <div class="drawer-header">
-            <span>書架</span>
-            <button class="drawer-close" id="shelfClose">&times;</button>
-        </div>
-        <div class="drawer-list" id="shelfList"></div>
-    </div>
+<div class="drawer-content">
+<div class="drawer-header"><span>書架</span><button class="drawer-close" id="shelfClose">&times;</button></div>
+<div class="drawer-list" id="shelfList"></div>
+</div>
 </div>
 
 <script>
 const DB_NAME = 'SimpleReaderDB';
 const STORE_NAME = 'books';
 let db = null;
+// 翻頁相關全域
+let fullText = "";
+let pageList = [];
+let currentPageIndex = 0;
+const CHARS_PER_PAGE = 1400; // 每頁大約字數，可自行調整，數字越大頁越少
 
 function initDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => { db = request.result; resolve(db); };
-        request.onupgradeneeded = (e) => {
-            const database = e.target.result;
-            if (!database.objectStoreNames.contains(STORE_NAME)) {
-                database.createObjectStore(STORE_NAME, { keyPath: 'key' });
-            }
-        };
-    });
+return new Promise((resolve, reject) => {
+const request = indexedDB.open(DB_NAME, 1);
+request.onerror = () => reject(request.error);
+request.onsuccess = () => { db = request.result; resolve(db); };
+request.onupgradeneeded = (e) => {
+const database = e.target.result;
+if (!database.objectStoreNames.contains(STORE_NAME)) {
+database.createObjectStore(STORE_NAME, { keyPath: 'key' });
 }
-
+};
+});
+}
 function saveBookToDB(key, name, content) {
-    if (!db) return;
-    try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put({ key, name, content, updatedAt: Date.now() });
-    } catch(e) {}
+if (!db) return;
+try {
+const tx = db.transaction(STORE_NAME, 'readwrite');
+tx.objectStore(STORE_NAME).put({ key, name, content, updatedAt: Date.now() });
+} catch(e) {}
 }
-
 function getAllBooksFromDB() {
-    return new Promise((resolve) => {
-        if (!db) return resolve([]);
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => resolve([]);
-    });
+return new Promise((resolve) => {
+if (!db) return resolve([]);
+const tx = db.transaction(STORE_NAME, 'readonly');
+const req = tx.objectStore(STORE_NAME).getAll();
+req.onsuccess = () => resolve(req.result || []);
+req.onerror = () => resolve([]);
+});
 }
-
 function deleteBookFromDB(key) {
-    return new Promise((resolve) => {
-        if (!db) return resolve();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const req = tx.objectStore(STORE_NAME).delete(key);
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
-    });
+return new Promise((resolve) => {
+if (!db) return resolve();
+const tx = db.transaction(STORE_NAME, 'readwrite');
+const req = tx.objectStore(STORE_NAME).delete(key);
+req.onsuccess = () => resolve();
+req.onerror = () => resolve();
+});
 }
 
-let currentFontSize = parseFloat(localStorage.getItem('reader_font_size')) || 26;
-let currentLineHeight = parseFloat(localStorage.getItem('reader_line_height')) || 1.4;
-
+let currentFontSize = parseFloat(localStorage.getItem('reader_font_size')) || 22;
+let currentLineHeight = parseFloat(localStorage.getItem('reader_line_height')) || 1.45;
 document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`);
 document.documentElement.style.setProperty('--line-height', currentLineHeight);
 
 const converter = window.OpenCC ? window.OpenCC.Converter({ from: 'cn', to: 'hk' }) : text => text;
-
 function formatQuotes(text) {
-    return text
-        .replace(/“/g, '「').replace(/”/g, '」')
-        .replace(/‘/g, '『').replace(/’/g, '』')
-        .replace(/"([^"]+)"/g, '「$1」')
-        .replace(/'([^']+)'/g, '『$1』');
+return text
+.replace(/“/g, '「').replace(/”/g, '」')
+.replace(/‘/g, '『').replace(/’/g, '』')
+.replace(/"([^"]+)"/g, '「$1」')
+.replace(/'([^']+)'/g, '『$1』');
 }
 
 const toolbar = document.getElementById('toolbar');
-const textContent = document.getElementById('textContent');
+const leftPage = document.getElementById('leftPage');
+const rightPage = document.getElementById('rightPage');
 const fileInput = document.getElementById('fileInput');
 const progressBtn = document.getElementById('progressBtn');
 const progressSlider = document.getElementById('progressSlider');
 const statusText = document.getElementById('statusText');
 const toastNotice = document.getElementById('toastNotice');
-
 const shelfBtn = document.getElementById('shelfBtn');
 const tocBtn = document.getElementById('tocBtn');
-
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const pageInfo = document.getElementById('pageInfo');
 const shelfModal = document.getElementById('shelfModal');
 const shelfClose = document.getElementById('shelfClose');
 const shelfList = document.getElementById('shelfList');
-
 const tocModal = document.getElementById('tocModal');
 const tocClose = document.getElementById('tocClose');
 const tocList = document.getElementById('tocList');
 
 let isUserDraggingSlider = false;
-let currentFileKey = null; 
-let chapterElements = []; 
+let currentFileKey = null;
+let chapterElements = [];
 let toastTimer = null;
 
 function showToast(msg) {
-    toastNotice.textContent = msg;
-    toastNotice.classList.add('show');
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toastNotice.classList.remove('show'); }, 2500);
+toastNotice.textContent = msg;
+toastNotice.classList.add('show');
+if (toastTimer) clearTimeout(toastTimer);
+toastTimer = setTimeout(() => { toastNotice.classList.remove('show'); }, 2500);
 }
-
 document.addEventListener('click', (e) => {
-    if (toolbar.contains(e.target) || shelfModal.contains(e.target) || tocModal.contains(e.target)) return;
-    toolbar.classList.toggle('hidden');
+if (toolbar.contains(e.target) || shelfModal.contains(e.target) || tocModal.contains(e.target)
+|| prevBtn.contains(e.target) || nextBtn.contains(e.target)) return;
+toolbar.classList.toggle('hidden');
 });
-
-function saveProgress(scrollTop) {
-    if (!currentFileKey) return;
-    try { localStorage.setItem(`reader_pos_${currentFileKey}`, scrollTop); } catch (e) {}
+function saveProgress(pageIdx) {
+if (!currentFileKey) return;
+try { localStorage.setItem(`reader_pos_${currentFileKey}`, pageIdx); } catch (e) {}
 }
-
 function getSavedProgress() {
-    if (!currentFileKey) return 0;
-    return parseFloat(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
+if (!currentFileKey) return 0;
+return parseInt(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
 }
-
 function updateProgressUI() {
-    const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
-    if (currentFileKey) saveProgress(scrollTop);
-    if (isUserDraggingSlider) return;
-
-    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-    if (scrollHeight <= 0) {
-        progressBtn.textContent = '0.00%';
-        progressSlider.value = 0;
-        return;
-    }
-
-    const percent = Math.min(100, Math.max(0, (scrollTop / scrollHeight) * 100));
-    progressBtn.textContent = `${percent.toFixed(2)}%`;
-    progressSlider.value = percent;
+if (!fullText) return;
+const percent = pageList.length === 0 ? 0 : (currentPageIndex / (pageList.length - 1)) * 100;
+progressBtn.textContent = `${percent.toFixed(2)}%`;
+progressSlider.value = percent;
+pageInfo.textContent = `${currentPageIndex+1} / ${pageList.length}`;
+saveProgress(currentPageIndex);
 }
-
-let scrollTimer;
-window.addEventListener('scroll', () => {
-    if (scrollTimer) cancelAnimationFrame(scrollTimer);
-    scrollTimer = requestAnimationFrame(updateProgressUI);
-}, { passive: true });
-
+// 分頁：把全文切成一頁一頁
+function splitTextToPages(text) {
+const pages = [];
+let ptr = 0;
+while(ptr < text.length) {
+let end = ptr + CHARS_PER_PAGE;
+if(end >= text.length) {
+pages.push(text.slice(ptr));
+break;
+}
+// 優先在換行切，避免單字硬切
+let brPos = text.indexOf('\n', end);
+if(brPos === -1) brPos = end;
+pages.push(text.slice(ptr, brPos+1));
+ptr = brPos + 1;
+}
+return pages;
+}
+// 渲染當前頁（左右雙欄）
+function renderPage(idx) {
+if(pageList.length === 0) return;
+currentPageIndex = Math.max(0, Math.min(idx, pageList.length - 1));
+leftPage.textContent = pageList[currentPageIndex];
+rightPage.textContent = (currentPageIndex+1 < pageList.length) ? pageList[currentPageIndex+1] : "";
+updateProgressUI();
+}
+prevBtn.onclick = () => {
+renderPage(currentPageIndex - 2);
+};
+nextBtn.onclick = () => {
+renderPage(currentPageIndex + 2);
+};
+// 鍵盤 ← → 翻頁
+document.addEventListener('keydown', e=>{
+if(e.key === 'ArrowLeft') renderPage(currentPageIndex - 2);
+if(e.key === 'ArrowRight') renderPage(currentPageIndex + 2);
+});
 progressSlider.addEventListener('mousedown', () => isUserDraggingSlider = true);
 progressSlider.addEventListener('touchstart', () => isUserDraggingSlider = true, { passive: true });
-
 progressSlider.addEventListener('input', (e) => {
-    const targetPercent = parseFloat(e.target.value);
-    progressBtn.textContent = `${targetPercent.toFixed(2)}%`;
-    const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-    window.scrollTo(0, (targetPercent / 100) * scrollHeight);
+const targetPercent = parseFloat(e.target.value);
+const targetIdx = Math.floor((targetPercent / 100) * (pageList.length - 1));
+renderPage(targetIdx);
 });
-
 progressSlider.addEventListener('mouseup', () => isUserDraggingSlider = false);
 progressSlider.addEventListener('touchend', () => isUserDraggingSlider = false);
-
 progressBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const currentVal = parseFloat(progressBtn.textContent) || 0;
-    const input = prompt('請輸入跳轉進度 (0 - 100):', currentVal.toFixed(2));
-    if (input !== null) {
-        const targetPercent = parseFloat(input);
-        if (!isNaN(targetPercent)) {
-            const clamped = Math.min(100, Math.max(0, targetPercent));
-            const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-            window.scrollTo(0, (clamped / 100) * scrollHeight);
-            updateProgressUI();
-        }
-    }
+e.stopPropagation();
+const input = prompt('輸入跳轉頁數', currentPageIndex+1);
+if(input === null) return;
+const p = parseInt(input)-1;
+if(!isNaN(p)) renderPage(p);
 });
 
-// 字體/行距調整（帶錨點鎖定）
 function adjustStyles(type, delta) {
-    const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
-    
-    let anchorNode = null;
-    let anchorOffset = 0;
-    const range = document.caretRangeFromPoint ? document.caretRangeFromPoint(10, 100) : null;
-    if (range) {
-        anchorNode = range.startContainer;
-        anchorOffset = range.startOffset;
-    }
-
-    if (type === 'font') {
-        currentFontSize = Math.max(14, Math.min(50, currentFontSize + delta));
-        document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`);
-        localStorage.setItem('reader_font_size', currentFontSize);
-        showToast(`字體大小: ${currentFontSize}px`);
-    } else if (type === 'line') {
-        currentLineHeight = Math.max(1.0, Math.min(2.5, parseFloat((currentLineHeight + delta).toFixed(1))));
-        document.documentElement.style.setProperty('--line-height', currentLineHeight);
-        localStorage.setItem('reader_line_height', currentLineHeight);
-        showToast(`行距大小: ${currentLineHeight}`);
-    }
-
-    requestAnimationFrame(() => {
-        if (anchorNode && anchorNode.nodeType === Node.TEXT_NODE) {
-            try {
-                const rectRange = document.createRange();
-                rectRange.setStart(anchorNode, Math.min(anchorOffset, anchorNode.length));
-                rectRange.setEnd(anchorNode, Math.min(anchorOffset, anchorNode.length));
-                const rect = rectRange.getBoundingClientRect();
-                window.scrollBy(0, rect.top - 100);
-            } catch (e) {}
-        }
-        updateProgressUI();
-    });
+if (type === 'font') {
+currentFontSize = Math.max(14, Math.min(40, currentFontSize + delta));
+document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`);
+localStorage.setItem('reader_font_size', currentFontSize);
+showToast(`字體大小: ${currentFontSize}px`);
+} else if (type === 'line') {
+currentLineHeight = Math.max(1.0, Math.min(2.2, parseFloat((currentLineHeight + delta).toFixed(1))));
+document.documentElement.style.setProperty('--line-height', currentLineHeight);
+localStorage.setItem('reader_line_height', currentLineHeight);
+showToast(`行距大小: ${currentLineHeight}`);
 }
-
+}
 document.getElementById('fontIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', 2); });
 document.getElementById('fontDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', -2); });
 document.getElementById('lineIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', 0.1); });
 document.getElementById('lineDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', -0.1); });
 
 function setupDrawer(modalId, btnId, closeId) {
-    const modal = document.getElementById(modalId);
-    document.getElementById(btnId).addEventListener('click', (e) => {
-        e.stopPropagation();
-        modal.classList.add('active');
-        if (modalId === 'shelfModal') renderShelf();
-    });
-    document.getElementById(closeId).addEventListener('click', () => modal.classList.remove('active'));
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
+const modal = document.getElementById(modalId);
+document.getElementById(btnId).addEventListener('click', (e) => {
+e.stopPropagation();
+modal.classList.add('active');
+if (modalId === 'shelfModal') renderShelf();
+});
+document.getElementById(closeId).addEventListener('click', () => modal.classList.remove('active'));
+modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
 }
-
 setupDrawer('tocModal', 'tocBtn', 'tocClose');
 setupDrawer('shelfModal', 'shelfBtn', 'shelfClose');
 
-// 優化大文本解析與記憶體流暢度（支援數百萬字 Safari）
-function parseAndRenderChapters(fullText) {
-    const lines = fullText.split(/\r?\n/);
-    chapterElements = [];
-    textContent.innerHTML = '';
-    
-    const chapterRegex = /^\s*(?:第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷]|chapter\s*\d+|[0-9一二三四五六七八九十百]+[、\.])/i;
-    
-    const fragment = document.createDocumentFragment();
-    let charCount = 0;
-    const totalLen = fullText.length || 1;
-
-    // 分批插入 DOM 避免 Safari 卡死/崩潰
-    const batchSize = 2000;
-    let index = 0;
-
-    function processBatch() {
-        const limit = Math.min(index + batchSize, lines.length);
-        for (let i = index; i < limit; i++) {
-            const line = lines[i];
-            const p = document.createElement('div');
-            p.textContent = line + (i < lines.length - 1 ? '\n' : '');
-            
-            const trimmed = line.trim();
-            if (trimmed.length > 0 && trimmed.length < 50 && chapterRegex.test(trimmed)) {
-                p.classList.add('chapter-title-node');
-                const percent = ((charCount / totalLen) * 100).toFixed(2);
-                chapterElements.push({
-                    title: trimmed,
-                    element: p,
-                    percent: percent
-                });
-            }
-            fragment.appendChild(p);
-            charCount += line.length + 1;
-        }
-        textContent.appendChild(fragment);
-        index = limit;
-
-        if (index < lines.length) {
-            requestAnimationFrame(processBatch);
-        } else {
-            renderToc();
-        }
-    }
-    processBatch();
+function parseChaptersForToc(text) {
+chapterElements = [];
+const lines = text.split(/\r?\n/);
+const chapterRegex = /^\s*(?:第[0-9零一二三四五六七八九十百千萬億]+[章節回幕卷]|chapter\s*\d+|[0-9一二三四五六七八九十百]+[、\.])/i;
+let charPos = 0;
+for(let line of lines) {
+const trimmed = line.trim();
+if (trimmed.length > 0 && trimmed.length < 50 && chapterRegex.test(trimmed)) {
+const percent = (charPos / text.length) * 100;
+chapterElements.push({title: trimmed, percent});
 }
-
+charPos += line.length + 1;
+}
+}
 function renderToc() {
-    tocList.innerHTML = '';
-    if (chapterElements.length === 0) {
-        tocList.innerHTML = '<div class="drawer-empty">未偵測到明確的章節目錄</div>';
-        tocBtn.style.display = 'none';
-        return;
-    }
-    
-    tocBtn.style.display = 'block';
-    const fragment = document.createDocumentFragment();
-    chapterElements.forEach((ch) => {
-        const item = document.createElement('div');
-        item.className = 'drawer-item';
-        
-        const titleSpan = document.createElement('span');
-        titleSpan.textContent = ch.title;
-        titleSpan.style.overflow = 'hidden';
-        titleSpan.style.textOverflow = 'ellipsis';
-        titleSpan.style.flex = '1';
-
-        const percentSpan = document.createElement('span');
-        percentSpan.className = 'item-subtext';
-        percentSpan.textContent = `${ch.percent}%`;
-
-        item.appendChild(titleSpan);
-        item.appendChild(percentSpan);
-
-        item.addEventListener('click', () => {
-            tocModal.classList.remove('active');
-            const elementTop = ch.element.offsetTop;
-            window.scrollTo(0, elementTop - 80);
-            updateProgressUI();
-        });
-        fragment.appendChild(item);
-    });
-    tocList.appendChild(fragment);
+tocList.innerHTML = '';
+if (chapterElements.length === 0) {
+tocList.innerHTML = '<div class="drawer-empty">未偵測到明確的章節目錄</div>';
+tocBtn.style.display = 'none';
+return;
 }
-
+tocBtn.style.display = 'block';
+chapterElements.forEach((ch)=>{
+const item = document.createElement('div');
+item.className = 'drawer-item';
+item.innerText = ch.title;
+item.onclick = ()=>{
+tocModal.classList.remove('active');
+const targetIdx = Math.floor(ch.percent / 100 * (pageList.length - 1));
+renderPage(targetIdx);
+};
+tocList.appendChild(item);
+})
+}
 async function renderShelf() {
-    shelfList.innerHTML = '';
-    const books = await getAllBooksFromDB();
-    if (books.length === 0) {
-        shelfList.innerHTML = '<div class="drawer-empty">書架目前沒有儲存的書籍</div>';
-        return;
-    }
-
-    books.sort((a, b) => b.updatedAt - a.updatedAt);
-    books.forEach((book) => {
-        const item = document.createElement('div');
-        item.className = 'drawer-item';
-
-        const titleSpan = document.createElement('span');
-        titleSpan.textContent = book.name;
-        titleSpan.style.overflow = 'hidden';
-        titleSpan.style.textOverflow = 'ellipsis';
-        titleSpan.style.flex = '1';
-
-        const delBtn = document.createElement('button');
-        delBtn.className = 'delete-btn';
-        delBtn.textContent = '刪除';
-        delBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            if (confirm(`確定要從書架刪除《${book.name}》嗎？`)) {
-                await deleteBookFromDB(book.key);
-                renderShelf();
-            }
-        });
-
-        item.appendChild(titleSpan);
-        item.appendChild(delBtn);
-
-        item.addEventListener('click', () => {
-            shelfModal.classList.remove('active');
-            currentFileKey = book.key;
-            statusText.textContent = '載入中...';
-            parseAndRenderChapters(book.content);
-
-            const savedY = getSavedProgress();
-            window.scrollTo(0, savedY);
-            updateProgressUI();
-            statusText.textContent = '';
-            showToast(`已載入《${book.name}》`);
-        });
-
-        shelfList.appendChild(item);
-    });
+shelfList.innerHTML = '';
+const books = await getAllBooksFromDB();
+if (books.length === 0) {
+shelfList.innerHTML = '<div class="drawer-empty">書架目前沒有儲存的書籍</div>';
+return;
+}
+books.sort((a, b) => b.updatedAt - a.updatedAt);
+books.forEach((book) => {
+const item = document.createElement('div');
+item.className = 'drawer-item';
+const titleSpan = document.createElement('span');
+titleSpan.textContent = book.name;
+const delBtn = document.createElement('button');
+delBtn.className = 'delete-btn';
+delBtn.textContent = '刪除';
+delBtn.onclick = async (e) => {
+e.stopPropagation();
+if(confirm(`確定刪除《${book.name}》？`)) {
+await deleteBookFromDB(book.key);
+renderShelf();
+}
+};
+item.appendChild(titleSpan);
+item.appendChild(delBtn);
+item.onclick = () => {
+shelfModal.classList.remove('active');
+currentFileKey = book.key;
+statusText.textContent = '載入中...';
+fullText = book.content;
+pageList = splitTextToPages(fullText);
+parseChaptersForToc(fullText);
+renderToc();
+const savedPage = getSavedProgress();
+renderPage(savedPage);
+statusText.textContent = '';
+showToast(`已載入《${book.name}》`);
+};
+shelfList.appendChild(item);
+});
 }
 
 fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    currentFileKey = `${file.name}_${file.size}`;
-    statusText.textContent = '載入中...';
-    textContent.innerHTML = '';
-    tocBtn.style.display = 'none';
-
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-
-        let encoding = 'utf-8';
-        try {
-            const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
-            utf8Decoder.decode(uint8Array.subarray(0, 5000));
-        } catch (err) {
-            encoding = 'gb18030';
-        }
-
-        const decoder = new TextDecoder(encoding);
-        const chunkSize = 250000;
-        let offset = 0;
-        let fullRawText = '';
-
-        while (offset < uint8Array.length) {
-            const chunk = uint8Array.subarray(offset, offset + chunkSize);
-            const isFinal = offset + chunkSize >= uint8Array.length;
-            const textChunk = decoder.decode(chunk, { stream: !isFinal });
-
-            fullRawText += textChunk;
-            offset += chunkSize;
-            statusText.textContent = `${Math.min(100, Math.round((offset / uint8Array.length) * 100))}%`;
-            await new Promise(r => setTimeout(r, 0));
-        }
-
-        const convertedFullText = formatQuotes(converter(fullRawText));
-        parseAndRenderChapters(convertedFullText);
-        toolbar.classList.remove('hidden');
-
-        saveBookToDB(currentFileKey, file.name, convertedFullText);
-
-        const savedY = getSavedProgress();
-        if (savedY > 0) {
-            statusText.textContent = '已恢復進度';
-            setTimeout(() => { statusText.textContent = ''; }, 2000);
-            window.scrollTo(0, savedY);
-            updateProgressUI();
-        } else {
-            statusText.textContent = '';
-            window.scrollTo(0, 0);
-            updateProgressUI();
-        }
-        showToast(`成功載入《${file.name}》`);
-
-    } catch (err) {
-        console.error(err);
-        statusText.textContent = '載入失敗';
-    }
+const file = e.target.files[0];
+if (!file) return;
+currentFileKey = `${file.name}_${file.size}`;
+statusText.textContent = '載入中...';
+try {
+const arrayBuffer = await file.arrayBuffer();
+const uint8Array = new Uint8Array(arrayBuffer);
+let encoding = 'utf-8';
+try {
+const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+utf8Decoder.decode(uint8Array.subarray(0, 5000));
+} catch (err) { encoding = 'gb18030'; }
+const decoder = new TextDecoder(encoding);
+const chunkSize = 250000;
+let offset = 0;
+let fullRawText = '';
+while (offset < uint8Array.length) {
+const chunk = uint8Array.subarray(offset, offset + chunkSize);
+const isFinal = offset + chunkSize >= uint8Array.length;
+const textChunk = decoder.decode(chunk, { stream: !isFinal });
+fullRawText += textChunk;
+offset += chunkSize;
+statusText.textContent = `${Math.min(100, Math.round((offset / uint8Array.length) * 100))}%`;
+await new Promise(r => setTimeout(r, 0));
+}
+fullText = formatQuotes(converter(fullRawText));
+pageList = splitTextToPages(fullText);
+parseChaptersForToc(fullText);
+renderToc();
+saveBookToDB(currentFileKey, file.name, fullText);
+const savedPage = getSavedProgress();
+renderPage(savedPage);
+statusText.textContent = '';
+showToast(`成功載入《${file.name}》`);
+} catch (err) {
+console.error(err);
+statusText.textContent = '載入失敗';
+}
 });
 
 window.addEventListener('DOMContentLoaded', async () => {
-    try {
-        await initDB();
-        const books = await getAllBooksFromDB();
-        if (books.length > 0) {
-            books.sort((a, b) => b.updatedAt - a.updatedAt);
-            const lastBook = books[0];
-            currentFileKey = lastBook.key;
-            parseAndRenderChapters(lastBook.content);
-            toolbar.classList.remove('hidden');
-
-            const savedY = getSavedProgress();
-            if (savedY > 0) {
-                window.scrollTo(0, savedY);
-            }
-            updateProgressUI();
-            showToast(`自動載入最近書籍: ${lastBook.name}`);
-        }
-    } catch (e) {
-        console.error('初始化書架失敗', e);
-    }
+try {
+await initDB();
+const books = await getAllBooksFromDB();
+if (books.length > 0) {
+books.sort((a, b) => b.updatedAt - a.updatedAt);
+const lastBook = books[0];
+currentFileKey = lastBook.key;
+fullText = lastBook.content;
+pageList = splitTextToPages(fullText);
+parseChaptersForToc(fullText);
+renderToc();
+const savedPage = getSavedProgress();
+renderPage(savedPage);
+showToast(`自動載入最近書籍: ${lastBook.name}`);
+}
+} catch (e) {
+console.error('初始化書架失敗', e);
+}
 });
 </script>
-
 </body>
 </html>
