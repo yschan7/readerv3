@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
@@ -18,9 +17,7 @@
 --line-height: 1.45;
 --col-gap: 40px;
 --page-padding: 12px;
-}
-
-*, *::before, *::after {
+}*, *::before, *::after {
 box-sizing: border-box;
 margin: 0;
 padding: 0;
@@ -251,15 +248,8 @@ margin-left: 8px;
 flex-shrink: 0;
 }
 .delete-btn:active { background: #551111; }
-/* offscreen measurer */
-.measurer {
-position: absolute;
-white-space: pre-wrap;
-word-break: break-word;
-visibility: hidden;
-pointer-events: none;
-}
 </style>
+
 </head>
 <body>
 <div class="toolbar" id="toolbar">
@@ -280,24 +270,16 @@ pointer-events: none;
 </div>
 <span class="loading-status" id="statusText"></span>
 </div>
-</div>
-
-<div class="reader-wrap">
+</div><div class="reader-wrap">
 <div class="book-container">
 <div class="page-col" id="leftPage">請點擊上方「開啟檔案」或從「書架」載入文章...</div>
 <div class="page-col" id="rightPage"></div>
 </div>
-</div>
-
-<div class="page-footer">
+</div><div class="page-footer">
 <button class="btn paging-btn" id="prevBtn">← 上一頁</button>
 <span class="page-info" id="pageInfo">-- / --</span>
 <button class="btn paging-btn" id="nextBtn">下一頁 →</button>
-</div>
-
-<div class="toast-notice" id="toastNotice"></div>
-
-<div class="drawer-modal" id="tocModal">
+</div><div class="toast-notice" id="toastNotice"></div><div class="drawer-modal" id="tocModal">
 <div class="drawer-content">
 <div class="drawer-header"><span>章節</span><button class="drawer-close" id="tocClose">&times;</button></div>
 <div class="drawer-list" id="tocList"></div>
@@ -308,11 +290,7 @@ pointer-events: none;
 <div class="drawer-header"><span>書架</span><button class="drawer-close" id="shelfClose">&times;</button></div>
 <div class="drawer-list" id="shelfList"></div>
 </div>
-</div>
-
-<div class="measurer" id="measurer"></div>
-
-<script>
+</div><script>
 const DB_NAME = 'SimpleReaderDB';
 const STORE_NAME = 'books';
 let db = null;
@@ -394,7 +372,6 @@ const shelfList = document.getElementById('shelfList');
 const tocModal = document.getElementById('tocModal');
 const tocClose = document.getElementById('tocClose');
 const tocList = document.getElementById('tocList');
-const measurer = document.getElementById('measurer');
 
 let isUserDraggingSlider = false;
 let currentFileKey = null;
@@ -434,41 +411,28 @@ if (!currentFileKey) return 0;
 return parseInt(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
 }
 
+function getDynamicCharsPerPage() {
+const colWidth = leftPage.clientWidth - 24;
+const colHeight = leftPage.clientHeight - 24;
+const charsPerLine = Math.floor(colWidth / currentFontSize);
+const linesPerPage = Math.floor(colHeight / (currentFontSize * currentLineHeight));
+return Math.max(100, Math.floor(charsPerLine * linesPerPage * 0.85));
+}
+
 function splitTextToPages(text) {
 const pages = [];
-const pageW = leftPage.clientWidth - (var(--page-padding)*2);
-const pageH = leftPage.clientHeight - (var(--page-padding)*2);
-measurer.style.width = pageW + 'px';
-measurer.style.fontSize = currentFontSize + 'px';
-measurer.style.lineHeight = currentLineHeight;
-measurer.style.whiteSpace = 'pre-wrap';
-measurer.style.wordBreak = 'break-word';
-
 let ptr = 0;
-const total = text.length;
-while(ptr < total) {
-let low = 1;
-let high = total - ptr;
-let best = 1;
-while(low <= high) {
-const mid = Math.floor((low + high)/2);
-measurer.textContent = text.slice(ptr, ptr + mid);
-if(measurer.offsetHeight <= pageH) {
-best = mid;
-low = mid + 1;
-} else {
-high = mid - 1;
+const perPage = getDynamicCharsPerPage();
+while(ptr < text.length) {
+let end = ptr + perPage;
+if(end >= text.length) {
+pages.push(text.slice(ptr));
+break;
 }
-}
-// try break at newline backwards
-let endPos = ptr + best;
-const lookBack = Math.max(ptr, endPos - 120);
-const nlPos = text.lastIndexOf('\n', endPos);
-if(nlPos >= lookBack) {
-endPos = nlPos + 1;
-}
-pages.push(text.slice(ptr, endPos));
-ptr = endPos;
+let brPos = text.indexOf('\n', end);
+if(brPos === -1) brPos = end;
+pages.push(text.slice(ptr, brPos+1));
+ptr = brPos + 1;
 }
 return pages;
 }
@@ -737,6 +701,5 @@ showToast(`自動載入最近書籍: ${lastBook.name}`);
 console.error('初始化書架失敗', e);
 }
 });
-</script>
-</body>
+</script></body>
 </html>
