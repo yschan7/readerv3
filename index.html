@@ -104,7 +104,7 @@ height: 100%;
 display: flex;
 justify-content: center;
 align-items: stretch;
-padding: 0 16px 56px 16px;
+padding: 0 16px 48px 16px;
 }
 .book-container {
 display: flex;
@@ -249,7 +249,6 @@ flex-shrink: 0;
 }
 .delete-btn:active { background: #551111; }
 </style>
-
 </head>
 <body>
 <div class="toolbar" id="toolbar">
@@ -299,7 +298,6 @@ let pageList = [];
 let currentCharOffset = 0;
 let wheelLock = false;
 let resizeTimer = null;
-
 function initDB() {
 return new Promise((resolve, reject) => {
 const request = indexedDB.open(DB_NAME, 1);
@@ -338,12 +336,10 @@ req.onsuccess = () => resolve();
 req.onerror = () => resolve();
 });
 }
-
 let currentFontSize = parseFloat(localStorage.getItem('reader_font_size')) || 22;
 let currentLineHeight = parseFloat(localStorage.getItem('reader_line_height')) || 1.45;
 document.documentElement.style.setProperty('--font-size', `${currentFontSize}px`);
 document.documentElement.style.setProperty('--line-height', currentLineHeight);
-
 const converter = window.OpenCC ? window.OpenCC.Converter({ from: 'cn', to: 'hk' }) : text => text;
 function formatQuotes(text) {
 return text
@@ -352,7 +348,6 @@ return text
 .replace(/"([^"]+)"/g, '「$1」')
 .replace(/'([^']+)'/g, '『$1』');
 }
-
 const toolbar = document.getElementById('toolbar');
 const leftPage = document.getElementById('leftPage');
 const rightPage = document.getElementById('rightPage');
@@ -372,12 +367,10 @@ const shelfList = document.getElementById('shelfList');
 const tocModal = document.getElementById('tocModal');
 const tocClose = document.getElementById('tocClose');
 const tocList = document.getElementById('tocList');
-
 let isUserDraggingSlider = false;
 let currentFileKey = null;
 let chapterElements = [];
 let toastTimer = null;
-
 function showToast(msg) {
 toastNotice.textContent = msg;
 toastNotice.classList.add('show');
@@ -401,7 +394,6 @@ goPageDelta(-2);
 }
 setTimeout(() => wheelLock = false, 180);
 }, { passive: false });
-
 function saveProgress(offset) {
 if (!currentFileKey) return;
 try { localStorage.setItem(`reader_pos_${currentFileKey}`, offset); } catch (e) {}
@@ -410,7 +402,6 @@ function getSavedProgress() {
 if (!currentFileKey) return 0;
 return parseInt(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
 }
-
 function getDynamicCharsPerPage() {
 const colWidth = leftPage.clientWidth - 24;
 const colHeight = leftPage.clientHeight - 24;
@@ -418,14 +409,12 @@ const charsPerLine = Math.max(1, Math.floor(colWidth / currentFontSize));
 const linesPerPage = Math.max(1, Math.floor(colHeight / (currentFontSize * currentLineHeight)));
 return Math.max(100, Math.floor(charsPerLine * linesPerPage * 0.85));
 }
-
 function splitTextToPages(text) {
 if (!text) return [];
 const pages = [];
 const perPageGuess = getDynamicCharsPerPage();
-
-const measurer = document.createElement('div');
 const style = window.getComputedStyle(leftPage);
+const measurer = document.createElement('div');
 measurer.style.position = 'fixed';
 measurer.style.left = '-99999px';
 measurer.style.top = '0';
@@ -439,16 +428,12 @@ measurer.style.whiteSpace = 'pre-wrap';
 measurer.style.wordBreak = 'break-word';
 measurer.style.boxSizing = 'border-box';
 document.body.appendChild(measurer);
-
-try {
 let ptr = 0;
 const maxWindow = Math.max(250, perPageGuess * 2);
-
 while (ptr < text.length) {
 const upperBound = Math.min(text.length, ptr + maxWindow);
 let end = Math.min(upperBound, ptr + Math.max(80, Math.floor(perPageGuess * 1.1)));
 measurer.textContent = text.slice(ptr, end);
-
 let low, high, best;
 if (measurer.scrollHeight > measurer.clientHeight) {
 low = ptr + 1;
@@ -459,7 +444,6 @@ low = end;
 high = upperBound;
 best = end;
 }
-
 while (low <= high) {
 const mid = Math.floor((low + high) / 2);
 measurer.textContent = text.slice(ptr, mid);
@@ -470,32 +454,22 @@ low = mid + 1;
 high = mid - 1;
 }
 }
-
 end = best;
-
 if (end < text.length) {
 const lastNewline = text.lastIndexOf('\n', end - 1);
 if (lastNewline > ptr && (end - (lastNewline + 1)) <= 120) {
 end = lastNewline + 1;
 }
 }
-
 if (end <= ptr) {
 end = Math.min(text.length, ptr + 1);
 }
-
 pages.push(text.slice(ptr, end));
 ptr = end;
 }
-} finally {
-if (measurer.parentNode) {
-measurer.parentNode.removeChild(measurer);
-}
-}
-
+document.body.removeChild(measurer);
 return pages;
 }
-
 function charOffsetToPageIndex(offset) {
 if (!pageList.length) return 0;
 let ptr = 0;
@@ -507,7 +481,6 @@ ptr += pageList[i].length;
 }
 return pageList.length -1;
 }
-
 function updateProgressUI() {
 if (!fullText) return;
 const percent = fullText.length === 0 ? 0 : (currentCharOffset / fullText.length) * 100;
@@ -517,7 +490,6 @@ const pageIdx = charOffsetToPageIndex(currentCharOffset);
 pageInfo.textContent = `${pageIdx+1} / ${pageList.length}`;
 saveProgress(currentCharOffset);
 }
-
 function parseChaptersForToc(text) {
 chapterElements = [];
 const chapterRegex = /第([0-9零一二三四五六七八九十百千萬億]+)(節|章|回|卷|幕)([^\n]*)/g;
@@ -533,7 +505,6 @@ percent: percent
 });
 }
 }
-
 function renderToc() {
 tocList.innerHTML = '';
 if (chapterElements.length === 0) {
@@ -554,7 +525,6 @@ renderByOffset();
 tocList.appendChild(item);
 })
 }
-
 function renderByOffset() {
 if(!pageList.length) return;
 let ptr = 0;
@@ -570,7 +540,6 @@ leftPage.textContent = pageList[targetPage];
 rightPage.textContent = (targetPage+1 < pageList.length) ? pageList[targetPage+1] : "";
 updateProgressUI();
 }
-
 function goPageDelta(delta) {
 const currentPage = charOffsetToPageIndex(currentCharOffset);
 const nextPage = Math.max(0, Math.min(currentPage + delta, pageList.length - 1));
@@ -579,14 +548,12 @@ for(let i=0;i<nextPage;i++) ptr += pageList[i].length;
 currentCharOffset = ptr;
 renderByOffset();
 }
-
 prevBtn.onclick = () => goPageDelta(-2);
 nextBtn.onclick = () => goPageDelta(2);
 document.addEventListener('keydown', e=>{
 if(e.key === 'ArrowLeft') goPageDelta(-2);
 if(e.key === 'ArrowRight') goPageDelta(2);
 });
-
 progressSlider.addEventListener('mousedown', () => isUserDraggingSlider = true);
 progressSlider.addEventListener('touchstart', () => isUserDraggingSlider = true, { passive: true });
 progressSlider.addEventListener('input', (e) => {
@@ -607,7 +574,6 @@ for(let i=0;i<p;i++) ptr += pageList[i].length;
 currentCharOffset = ptr;
 renderByOffset();
 });
-
 function adjustStyles(type, delta) {
 if (type === 'font') {
 currentFontSize = Math.max(14, Math.min(40, currentFontSize + delta));
@@ -631,7 +597,6 @@ document.getElementById('fontIncBtn').addEventListener('click', (e) => { e.stopP
 document.getElementById('fontDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('font', -2); });
 document.getElementById('lineIncBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', 0.1); });
 document.getElementById('lineDecBtn').addEventListener('click', (e) => { e.stopPropagation(); adjustStyles('line', -0.1); });
-
 window.addEventListener('resize', () => {
 clearTimeout(resizeTimer);
 resizeTimer = setTimeout(() => {
@@ -643,7 +608,6 @@ renderByOffset();
 }
 }, 250);
 });
-
 function setupDrawer(modalId, btnId, closeId) {
 const modal = document.getElementById(modalId);
 document.getElementById(btnId).addEventListener('click', (e) => {
@@ -656,7 +620,6 @@ modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList
 }
 setupDrawer('tocModal', 'tocBtn', 'tocClose');
 setupDrawer('shelfModal', 'shelfBtn', 'shelfClose');
-
 async function renderShelf() {
 shelfList.innerHTML = '';
 const books = await getAllBooksFromDB();
@@ -698,7 +661,6 @@ showToast(`已載入《${book.name}》`);
 shelfList.appendChild(item);
 });
 }
-
 fileInput.addEventListener('change', async (e) => {
 const file = e.target.files[0];
 if (!file) return;
@@ -739,7 +701,6 @@ console.error(err);
 statusText.textContent = '載入失敗';
 }
 });
-
 window.addEventListener('DOMContentLoaded', async () => {
 try {
 await initDB();
