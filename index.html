@@ -251,6 +251,14 @@ margin-left: 8px;
 flex-shrink: 0;
 }
 .delete-btn:active { background: #551111; }
+/* offscreen measurer */
+.measurer {
+position: absolute;
+white-space: pre-wrap;
+word-break: break-word;
+visibility: hidden;
+pointer-events: none;
+}
 </style>
 </head>
 <body>
@@ -301,6 +309,8 @@ flex-shrink: 0;
 <div class="drawer-list" id="shelfList"></div>
 </div>
 </div>
+
+<div class="measurer" id="measurer"></div>
 
 <script>
 const DB_NAME = 'SimpleReaderDB';
@@ -384,6 +394,7 @@ const shelfList = document.getElementById('shelfList');
 const tocModal = document.getElementById('tocModal');
 const tocClose = document.getElementById('tocClose');
 const tocList = document.getElementById('tocList');
+const measurer = document.getElementById('measurer');
 
 let isUserDraggingSlider = false;
 let currentFileKey = null;
@@ -423,28 +434,41 @@ if (!currentFileKey) return 0;
 return parseInt(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
 }
 
-function getDynamicCharsPerPage() {
-const colWidth = leftPage.clientWidth - 24;
-const colHeight = leftPage.clientHeight - 24;
-const charsPerLine = Math.floor(colWidth / currentFontSize);
-const linesPerPage = Math.floor(colHeight / (currentFontSize * currentLineHeight));
-return Math.max(100, Math.floor(charsPerLine * linesPerPage * 0.85));
-}
-
 function splitTextToPages(text) {
 const pages = [];
+const pageW = leftPage.clientWidth - (var(--page-padding)*2);
+const pageH = leftPage.clientHeight - (var(--page-padding)*2);
+measurer.style.width = pageW + 'px';
+measurer.style.fontSize = currentFontSize + 'px';
+measurer.style.lineHeight = currentLineHeight;
+measurer.style.whiteSpace = 'pre-wrap';
+measurer.style.wordBreak = 'break-word';
+
 let ptr = 0;
-const perPage = getDynamicCharsPerPage();
-while(ptr < text.length) {
-let end = ptr + perPage;
-if(end >= text.length) {
-pages.push(text.slice(ptr));
-break;
+const total = text.length;
+while(ptr < total) {
+let low = 1;
+let high = total - ptr;
+let best = 1;
+while(low <= high) {
+const mid = Math.floor((low + high)/2);
+measurer.textContent = text.slice(ptr, ptr + mid);
+if(measurer.offsetHeight <= pageH) {
+best = mid;
+low = mid + 1;
+} else {
+high = mid - 1;
 }
-let brPos = text.indexOf('\n', end);
-if(brPos === -1) brPos = end;
-pages.push(text.slice(ptr, brPos+1));
-ptr = brPos + 1;
+}
+// try break at newline backwards
+let endPos = ptr + best;
+const lookBack = Math.max(ptr, endPos - 120);
+const nlPos = text.lastIndexOf('\n', endPos);
+if(nlPos >= lookBack) {
+endPos = nlPos + 1;
+}
+pages.push(text.slice(ptr, endPos));
+ptr = endPos;
 }
 return pages;
 }
