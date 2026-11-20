@@ -351,7 +351,6 @@ return text
 .replace(/'([^']+)'/g, '『$1』');
 }
 const toolbar = document.getElementById('toolbar');
-const readerWrap = document.getElementById('readerWrap');
 const leftPage = document.getElementById('leftPage');
 const rightPage = document.getElementById('rightPage');
 const fileInput = document.getElementById('fileInput');
@@ -411,15 +410,37 @@ const colWidth = Math.max(100, leftPage.clientWidth - 24);
 const colHeight = Math.max(100, leftPage.clientHeight - 24);
 const charsPerLine = Math.max(1, Math.floor(colWidth / currentFontSize));
 const linesPerPage = Math.max(1, Math.floor(colHeight / (currentFontSize * currentLineHeight)));
-return Math.max(100, Math.floor(charsPerLine * linesPerPage * 0.85));
+return Math.max(100, Math.floor(charsPerLine * linesPerPage * 0.72));
 }
-function splitTextToPages(text) {
+function fastSplitRange(text, startPtr, endPtr, perPage) {
+const pages = [];
+let ptr = startPtr;
+while (ptr < endPtr) {
+let end = ptr + perPage;
+if (end >= endPtr) {
+pages.push(text.slice(ptr, endPtr));
+break;
+}
+let brPos = text.indexOf('\n', end);
+if (brPos === -1 || brPos >= endPtr || brPos - end > 80) brPos = end;
+pages.push(text.slice(ptr, brPos + 1));
+ptr = brPos + 1;
+}
+return pages;
+}
+function splitTextToPages(text, centerOffset = null) {
 if (!text) return [];
+const perPage = getDynamicCharsPerPage();
 const colW = leftPage.clientWidth;
 const colH = leftPage.clientHeight;
-if (colW <= 0 || colH <= 0) return [text];
-const pages = [];
-const perPageGuess = getDynamicCharsPerPage();
+if (colW <= 0 || colH <= 0 || centerOffset === null) {
+return fastSplitRange(text, 0, text.length, perPage);
+}
+const windowRadius = 15000;
+const winStart = Math.max(0, centerOffset - windowRadius);
+const winEnd = Math.min(text.length, centerOffset + windowRadius);
+const prefixPages = fastSplitRange(text, 0, winStart, perPage);
+const suffixPages = fastSplitRange(text, winEnd, text.length, perPage);
 const style = window.getComputedStyle(leftPage);
 const measurer = document.createElement('div');
 measurer.style.position = 'fixed';
@@ -435,11 +456,13 @@ measurer.style.whiteSpace = 'pre-wrap';
 measurer.style.wordBreak = 'break-word';
 measurer.style.boxSizing = 'border-box';
 document.body.appendChild(measurer);
-let ptr = 0;
-const maxWindow = Math.max(250, perPageGuess * 2);
-while (ptr < text.length) {
-const upperBound = Math.min(text.length, ptr + maxWindow);
-let end = Math.min(upperBound, ptr + Math.max(80, Math.floor(perPageGuess * 1.1)));
+const exactPages = [];
+try {
+let ptr = winStart;
+const maxWindow = Math.max(250, perPage * 2);
+while (ptr < winEnd) {
+const upperBound = Math.min(winEnd, ptr + maxWindow);
+let end = Math.min(upperBound, ptr + Math.max(80, Math.floor(perPage * 1.1)));
 measurer.textContent = text.slice(ptr, end);
 let low, high, best;
 if (measurer.scrollHeight > measurer.clientHeight) {
@@ -462,20 +485,22 @@ high = mid - 1;
 }
 }
 end = best;
-if (end < text.length) {
+if (end < winEnd) {
 const lastNewline = text.lastIndexOf('\n', end - 1);
 if (lastNewline > ptr && (end - (lastNewline + 1)) <= 120) {
 end = lastNewline + 1;
 }
 }
 if (end <= ptr) {
-end = Math.min(text.length, ptr + 1);
+end = Math.min(winEnd, ptr + 1);
 }
-pages.push(text.slice(ptr, end));
+exactPages.push(text.slice(ptr, end));
 ptr = end;
 }
-document.body.removeChild(measurer);
-return pages;
+} finally {
+if (measurer.parentNode) measurer.parentNode.removeChild(measurer);
+}
+return prefixPages.concat(exactPages, suffixPages);
 }
 function charOffsetToPageIndex(offset) {
 if (!pageList.length) return 0;
@@ -594,9 +619,7 @@ localStorage.setItem('reader_line_height', currentLineHeight);
 showToast(`行距大小: ${currentLineHeight}`);
 }
 if(fullText){
-pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText);
-renderToc();
+pageList = splitTextToPages(fullText, currentCharOffset);
 renderByOffset();
 }
 }
@@ -608,9 +631,7 @@ window.addEventListener('resize', () => {
 clearTimeout(resizeTimer);
 resizeTimer = setTimeout(() => {
 if (fullText) {
-pageList = splitTextToPages(fullText);
-parseChaptersForToc(fullText);
-renderToc();
+pageList = splitTextToPages(fullText, currentCharOffset);
 renderByOffset();
 }
 }, 250);
@@ -657,10 +678,10 @@ shelfModal.classList.remove('active');
 currentFileKey = book.key;
 statusText.textContent = '載入中...';
 fullText = book.content;
-pageList = splitTextToPages(fullText);
+currentCharOffset = getSavedProgress();
+pageList = splitTextToPages(fullText, currentCharOffset);
 parseChaptersForToc(fullText);
 renderToc();
-currentCharOffset = getSavedProgress();
 renderByOffset();
 statusText.textContent = '';
 showToast(`已載入《${book.name}》`);
@@ -695,11 +716,11 @@ statusText.textContent = `${Math.min(100, Math.round((offset / uint8Array.length
 await new Promise(r => setTimeout(r, 0));
 }
 fullText = formatQuotes(converter(fullRawText));
-pageList = splitTextToPages(fullText);
+currentCharOffset = getSavedProgress();
+pageList = splitTextToPages(fullText, currentCharOffset);
 parseChaptersForToc(fullText);
 renderToc();
 saveBookToDB(currentFileKey, file.name, fullText);
-currentCharOffset = getSavedProgress();
 renderByOffset();
 statusText.textContent = '';
 showToast(`成功載入《${file.name}》`);
@@ -717,14 +738,12 @@ books.sort((a, b) => b.updatedAt - a.updatedAt);
 const lastBook = books[0];
 currentFileKey = lastBook.key;
 fullText = lastBook.content;
-requestAnimationFrame(() => {
-pageList = splitTextToPages(fullText);
+currentCharOffset = getSavedProgress();
+pageList = splitTextToPages(fullText, currentCharOffset);
 parseChaptersForToc(fullText);
 renderToc();
-currentCharOffset = getSavedProgress();
 renderByOffset();
 showToast(`自動載入最近書籍: ${lastBook.name}`);
-});
 }
 } catch (e) {
 console.error('初始化書架失敗', e);
