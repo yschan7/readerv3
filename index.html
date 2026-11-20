@@ -104,7 +104,7 @@ height: 100%;
 display: flex;
 justify-content: center;
 align-items: stretch;
-padding: 0 16px 48px 16px;
+padding: 0 16px 56px 16px;
 }
 .book-container {
 display: flex;
@@ -414,26 +414,85 @@ return parseInt(localStorage.getItem(`reader_pos_${currentFileKey}`)) || 0;
 function getDynamicCharsPerPage() {
 const colWidth = leftPage.clientWidth - 24;
 const colHeight = leftPage.clientHeight - 24;
-const charsPerLine = Math.floor(colWidth / currentFontSize);
-const linesPerPage = Math.floor(colHeight / (currentFontSize * currentLineHeight));
+const charsPerLine = Math.max(1, Math.floor(colWidth / currentFontSize));
+const linesPerPage = Math.max(1, Math.floor(colHeight / (currentFontSize * currentLineHeight)));
 return Math.max(100, Math.floor(charsPerLine * linesPerPage * 0.85));
 }
 
 function splitTextToPages(text) {
+if (!text) return [];
 const pages = [];
+const perPageGuess = getDynamicCharsPerPage();
+
+const measurer = document.createElement('div');
+const style = window.getComputedStyle(leftPage);
+measurer.style.position = 'fixed';
+measurer.style.left = '-99999px';
+measurer.style.top = '0';
+measurer.style.width = `${leftPage.clientWidth}px`;
+measurer.style.height = `${leftPage.clientHeight}px`;
+measurer.style.padding = style.padding;
+measurer.style.fontSize = style.fontSize;
+measurer.style.lineHeight = style.lineHeight;
+measurer.style.fontFamily = style.fontFamily;
+measurer.style.whiteSpace = 'pre-wrap';
+measurer.style.wordBreak = 'break-word';
+measurer.style.boxSizing = 'border-box';
+document.body.appendChild(measurer);
+
+try {
 let ptr = 0;
-const perPage = getDynamicCharsPerPage();
-while(ptr < text.length) {
-let end = ptr + perPage;
-if(end >= text.length) {
-pages.push(text.slice(ptr));
-break;
+const maxWindow = Math.max(250, perPageGuess * 2);
+
+while (ptr < text.length) {
+const upperBound = Math.min(text.length, ptr + maxWindow);
+let end = Math.min(upperBound, ptr + Math.max(80, Math.floor(perPageGuess * 1.1)));
+measurer.textContent = text.slice(ptr, end);
+
+let low, high, best;
+if (measurer.scrollHeight > measurer.clientHeight) {
+low = ptr + 1;
+high = end;
+best = ptr + 1;
+} else {
+low = end;
+high = upperBound;
+best = end;
 }
-let brPos = text.indexOf('\n', end);
-if(brPos === -1) brPos = end;
-pages.push(text.slice(ptr, brPos+1));
-ptr = brPos + 1;
+
+while (low <= high) {
+const mid = Math.floor((low + high) / 2);
+measurer.textContent = text.slice(ptr, mid);
+if (measurer.scrollHeight <= measurer.clientHeight) {
+best = mid;
+low = mid + 1;
+} else {
+high = mid - 1;
 }
+}
+
+end = best;
+
+if (end < text.length) {
+const lastNewline = text.lastIndexOf('\n', end - 1);
+if (lastNewline > ptr && (end - (lastNewline + 1)) <= 120) {
+end = lastNewline + 1;
+}
+}
+
+if (end <= ptr) {
+end = Math.min(text.length, ptr + 1);
+}
+
+pages.push(text.slice(ptr, end));
+ptr = end;
+}
+} finally {
+if (measurer.parentNode) {
+measurer.parentNode.removeChild(measurer);
+}
+}
+
 return pages;
 }
 
